@@ -47,7 +47,7 @@ pub fn render(buf: &mut Buffer, area: Rect, state: &GameState, s: &MapStyle, now
             let def = tile.def();
             let mut style = Style::new();
             let mut ground = false;
-            let text = if let Some(effect) = state.effect_at(p, now) {
+            let mut text = if let Some(effect) = state.effect_at(p, now) {
                 let d = effect.def();
                 style = style.fg(paint(d.fg)).add_modifier(Modifier::BOLD);
                 s.glyphs.symbol(&d.glyph, &mut sym)
@@ -64,7 +64,7 @@ pub fn render(buf: &mut Buffer, area: Rect, state: &GameState, s: &MapStyle, now
                 style = style.fg(paint(def.fg));
                 s.glyphs.wall(wall_mask(state, p, tile), &mut sym)
             } else {
-                ground = def.walkable;
+                ground = def.walkable && def.bg.is_none();
                 style = style.fg(paint(def.fg));
                 s.glyphs.symbol(&def.glyph, &mut sym)
             };
@@ -73,8 +73,11 @@ pub fn render(buf: &mut Buffer, area: Rect, state: &GameState, s: &MapStyle, now
                 let bg = if p == facing { lighten(ground, 0.22) } else { ground };
                 style = style.bg(paint(bg));
             } else {
-                // Monochrome: open ground fades into the background, the rest stands out by weight only.
-                style = style.fg(paint(if ground { s.theme.dim } else { s.theme.text }));
+                // Monochrome: open ground is blank (sparse like a text file), the rest is plain text.
+                style = style.fg(paint(s.theme.text));
+                if ground {
+                    text = " ";
+                }
                 if p == facing {
                     style = style.add_modifier(Modifier::UNDERLINED);
                 }
