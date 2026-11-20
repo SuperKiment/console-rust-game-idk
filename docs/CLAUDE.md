@@ -50,7 +50,7 @@ Pièges d'environnement :
 - Commits : Claude commite et pousse en autonomie sur la branche de l'issue en cours. Messages au format Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`), référence de l'issue dans le corps (`Refs #N`). Une PR par issue vers `main` (corps `Closes #N`, gabarit `.github/pull_request_template.md`), mergée par Claude (squash) une fois build, tests, clippy et fmt verts et le jeu testé.
 - Attribution : trailers `Co-Authored-By` et `Claude-Session` dans les commits, pied de page Claude Code dans les PR et commentaires GitHub. Aucune mention dans le code.
 - Branches : `<type>/<n°issue>-<slug>` depuis `main` à jour (ex. `feat/3-server-world`, `chore/1-bootstrap`). Une branche par issue.
-- Migrations de schéma ou de données : format de sauvegarde du monde : champ `version` dans `world/meta` ; tout changement incompatible incrémente la version et ajoute une conversion au chargement.
+- Migrations de schéma ou de données : format de sauvegarde du monde : `<world>/world.bin` (postcard), champ `version` de `SaveData` (`crates/server/src/save.rs`, `SAVE_VERSION`) ; tout changement incompatible incrémente la version et ajoute une conversion au chargement (aucune n'existe encore : une version différente est refusée).
 - Code temporaire : marqueur `TODO TEMP <réf>` (réf = numéro de ticket ou nom de tâche) pour le retrouver et le retirer avant commit.
 
 ## Langue

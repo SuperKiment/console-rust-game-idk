@@ -34,7 +34,7 @@ cargo run --release -p idk-client -- --server 127.0.0.1:7777
 ```
 
 Options serveur : `--bind`, `--port`, `--world`, `--seed` (env `IDK_BIND`, `IDK_PORT`, `IDK_WORLD`, `IDK_SEED`).
-Options client : `--server`, `--name`, `--incognito` (env `IDK_SERVER`, `IDK_NAME`).
+Options client : `--server`, `--name`, `--incognito`, `--configure` (env `IDK_SERVER`, `IDK_NAME`). Les options de la ligne de commande ne valent que pour la session : elles ne sont pas écrites dans la config.
 
 ## Contrôles
 
@@ -44,15 +44,24 @@ Options client : `--server`, `--name`, `--incognito` (env `IDK_SERVER`, `IDK_NAM
 | `e`, espace | interagir, caresser |
 | `b` | construire un mur |
 | `x` | casser |
-| `t`, entrée | chat |
-| `F2` | mode incognito |
+| `t`, entrée | chat (entrée envoie, `esc` annule) |
+| `F2` | basculer le mode incognito |
 | `esc`, `ctrl-c` | quitter |
 
 ## Config client
 
-Fichier TOML (nom, serveur, glyphes, couleurs, incognito), créé au premier lancement :
+Au premier lancement, un assistant pose quelques questions (symboles Unicode et emoji, couleurs, nom, serveur, incognito) et écrit le fichier de config. `--configure` le relance à tout moment (`docker compose run --rm client --configure` en docker) ; Échap quitte sans rien sauvegarder.
+
+Fichier TOML (nom, serveur, glyphes, couleurs, incognito) :
 `$IDK_CONFIG`, sinon `$XDG_CONFIG_HOME/idk-game/client.toml`, sinon `~/.config/idk-game/client.toml`.
-En docker : volume `client-config` monté dans `/config`. Une option `--configure` (assistant de config) sera ajoutée ultérieurement.
+En docker : volume `client-config` monté dans `/config`.
+
+## Mode incognito
+
+Remplace l'interface par une fausse fenêtre d'éditeur de code (onglets, numéros de ligne, journal façon logs serveur, barre d'état), en niveaux de gris et en ASCII. La connexion et le jeu continuent normalement.
+- `F2` : bascule à chaud (hors saisie du chat).
+- `--incognito` : démarre dans ce mode (session seulement).
+- Option `incognito` de la config (question de l'assistant) : mode de démarrage par défaut.
 
 ## Sauvegarde du monde
 

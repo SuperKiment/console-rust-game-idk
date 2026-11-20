@@ -25,4 +25,8 @@ Les plages ne sont volontairement pas recopiées ici : elles se périmaient. L'i
 <!-- guide-*.md communs à tous les dépôts. -->
 
 ## Dépôt `console-rust-game-idk`
+- [vue-ensemble.md](project-specific-docs/console-rust-game-idk/vue-ensemble.md) — carte du dépôt : les 3 crates (liens vers leurs fiches `vue-ensemble.md`), docker, `.github`, `docs`.
+- [carto-protocole.md](project-specific-docs/console-rust-game-idk/carto-protocole.md) — framing, `ClientMsg`/`ServerMsg`, séquence de connexion, règles de versionnement.
+- [server/carto-architecture.md](project-specific-docs/console-rust-game-idk/server/carto-architecture.md) — serveur : boucle de jeu et tick, monde par chunks, IA, sauvegarde.
+- [client/carto-architecture.md](project-specific-docs/console-rust-game-idk/client/carto-architecture.md) — client : boucle `select`, reconnexion, layouts normal et incognito, assistant de config, touches, glyphes.
 - [guide-ajout-contenu.md](project-specific-docs/console-rust-game-idk/guide-ajout-contenu.md) — ajouter tuiles, biomes, animaux, effets via les tables de contenu.
