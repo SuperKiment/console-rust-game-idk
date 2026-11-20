@@ -132,7 +132,7 @@ Priorité de décision dans `act` : animal apprivoisé trop loin (plus de `TELEP
 Déclencheurs (`crates/server/src/lib.rs`) : toutes les 60 s (`AUTOSAVE`), et à l'arrêt sur ctrl-c ou SIGTERM (`shutdown_signal` dans `main.rs`). Une erreur d'écriture est journalisée sans arrêter le serveur. Au démarrage : sauvegarde existante (graine ignorée) sinon nouveau monde avec `--seed` ou une graine tirée de l'horloge.
 
 > [!WARNING]
-> `docs/CLAUDE.md` décrit un champ `version` dans `world/meta`. Le code utilise `world.bin` avec `version` dans `SaveData`. Un changement incompatible doit incrémenter `SAVE_VERSION` et ajouter la conversion dans `save::read`.
+> Un changement incompatible du format de sauvegarde doit incrémenter `SAVE_VERSION` et ajouter la conversion dans `save::read` (voir `docs/CLAUDE.md`, section « Git, branches et migrations »). Attention : `read` désérialise toute la `SaveData` avant de tester `version`, donc un ancien fichier dont la structure diffère échoue au décodage avant la vérification.
 
 ## Docs liées
 

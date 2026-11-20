@@ -104,7 +104,7 @@ stateDiagram-v2
 | | Normal (`ui/game.rs`) | Incognito (`ui/incognito.rs`) |
 |---|---|---|
 | Carte | couleurs de la table de contenu, jeu de glyphes de la config | monochrome gris, **toujours ASCII** (`GlyphSet::Ascii`) ; le sol praticable est laissé vide |
-| Cadre | panneaux `you`, `online`, `nearby`, `keys`, journal (9 lignes) | barre d'onglets (`<biome>.rs`, `world.log`, `Cargo.toml`), gouttière de numéros de ligne = coordonnée y, panneau `OUTPUT` |
+| Cadre | panneaux `you`, `online`, `nearby`, `keys`, journal (9 lignes de haut, bordures comprises ; 7 lignes de texte, 6 pendant la saisie du chat) | barre d'onglets (`<biome>.rs`, `world.log`, `Cargo.toml`), gouttière de numéros de ligne = coordonnée y, panneau `OUTPUT` (8 lignes max en-tête compris, au plus un tiers de l'écran) |
 | Journal | heure, texte coloré par type | format de logs serveur : `ISO8601 NIVEAU message` (`Animal` = DEBUG, départs et déconnexions = WARN) |
 | Barre d'état | popup centrée si non connecté | `NORMAL` / `INSERT` façon vim, `Ln y, Col x`, chat saisi comme ligne de commande `:` |
 | Aide des touches | panneau `keys`, généré depuis `BINDINGS` | aucune |

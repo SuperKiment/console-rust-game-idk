@@ -23,8 +23,10 @@ Les joueurs se connectent (port 7777) avec, au choix :
 
 ```sh
 cargo run --release -p idk-client -- --server <ip>:7777
-docker compose run --rm -e IDK_SERVER=<ip>:7777 client
+docker compose run --rm --no-deps -e IDK_SERVER=<ip>:7777 client
 ```
+
+`--no-deps` évite de démarrer un serveur local inutile sur la machine du joueur.
 
 ## Sans docker
 
