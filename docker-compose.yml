@@ -1,0 +1,30 @@
+services:
+  server:
+    build:
+      context: .
+      target: server
+    ports:
+      - "7777:7777"
+    environment:
+      - IDK_SEED # optionnel, repris de l'environnement de l'hôte
+    volumes:
+      - world:/data
+    restart: unless-stopped
+
+  client:
+    build:
+      context: .
+      target: client
+    profiles: [client]
+    stdin_open: true
+    tty: true
+    environment:
+      - IDK_SERVER=server:7777
+      - IDK_NAME # optionnel, repris de l'environnement de l'hôte
+    depends_on: [server]
+    volumes:
+      - client-config:/config
+
+volumes:
+  world:
+  client-config:
