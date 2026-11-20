@@ -3,7 +3,7 @@
 Tout le contenu est déclaré dans des tables de `crates/shared/src/content/`, via la macro `content_table!` (`content/mod.rs`). Une ligne de table génère à la fois la variante d'enum (identifiant réseau et de sauvegarde) et sa définition : impossible de les désynchroniser.
 
 > [!WARNING]
-> Le discriminant de l'enum est le format réseau et de sauvegarde. **Ajoute toujours les lignes à la fin** d'une table. Réordonner ou supprimer une ligne casse les sauvegardes existantes (voir CLAUDE.md, convention de migration).
+> L'ordre des lignes (index de variante, encodé par postcard) est le format réseau et de sauvegarde. **Ajoute toujours les lignes à la fin** d'une table. Réordonner ou supprimer une ligne casse les sauvegardes existantes (voir CLAUDE.md, convention de migration).
 
 | Table | Fichier | Ce qu'une ligne définit |
 |---|---|---|
