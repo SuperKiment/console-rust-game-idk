@@ -124,6 +124,7 @@ impl Game {
         self.players.insert(conn, player);
         tracing::info!(%name, ?pos, "player joined");
         self.broadcast_log(LogKind::System, format!("{name} joined the world."));
+        self.broadcast_online();
         self.stream_chunks(conn, now);
     }
 
@@ -132,6 +133,7 @@ impl Game {
             tracing::info!(name = %p.name, "player left");
             self.broadcast_log(LogKind::System, format!("{} left the world.", p.name));
             self.offline.insert(p.name, (p.pos, p.facing));
+            self.broadcast_online();
         }
     }
 
@@ -212,7 +214,9 @@ impl Game {
             self.effect(target, Effect::Heart);
         } else {
             let tile = self.world.tile(target).def().name;
-            self.tell(conn, LogKind::Info, format!("You see {tile}."));
+            let mut text = format!("{tile} ahead.");
+            text[..1].make_ascii_uppercase();
+            self.tell(conn, LogKind::Info, text);
         }
     }
 
@@ -273,6 +277,13 @@ impl Game {
         for p in self.players.values() {
             let _ = p.tx.send(msg.clone());
         }
+    }
+
+    fn broadcast_online(&self) {
+        let mut online: Vec<(String, u8)> =
+            self.players.values().map(|p| (p.name.clone(), p.color)).collect();
+        online.sort();
+        self.broadcast(ServerMsg::Online(online));
     }
 
     pub fn broadcast_log(&self, kind: LogKind, text: impl Into<String>) {
