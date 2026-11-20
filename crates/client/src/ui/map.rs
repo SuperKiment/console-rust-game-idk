@@ -39,11 +39,14 @@ pub fn render(buf: &mut Buffer, area: Rect, state: &GameState, s: &MapStyle, now
             let p = Pos::new(o.x + col as i32, o.y + row as i32);
             let (x, y) = (area.x + col * tw, area.y + row);
             let Some(tile) = state.tile(p) else {
-                buf.set_stringn(x, y, "  ", tw as usize, Style::new().bg(paint(s.theme.unknown)));
+                let blank =
+                    if s.theme.map_colors { Style::new().bg(paint(s.theme.unknown)) } else { Style::new() };
+                buf.set_stringn(x, y, "  ", tw as usize, blank);
                 continue;
             };
             let def = tile.def();
             let mut style = Style::new();
+            let mut ground = false;
             let text = if let Some(effect) = state.effect_at(p, now) {
                 let d = effect.def();
                 style = style.fg(paint(d.fg)).add_modifier(Modifier::BOLD);
@@ -61,6 +64,7 @@ pub fn render(buf: &mut Buffer, area: Rect, state: &GameState, s: &MapStyle, now
                 style = style.fg(paint(def.fg));
                 s.glyphs.wall(wall_mask(state, p, tile), &mut sym)
             } else {
+                ground = def.walkable;
                 style = style.fg(paint(def.fg));
                 s.glyphs.symbol(&def.glyph, &mut sym)
             };
@@ -69,8 +73,8 @@ pub fn render(buf: &mut Buffer, area: Rect, state: &GameState, s: &MapStyle, now
                 let bg = if p == facing { lighten(ground, 0.22) } else { ground };
                 style = style.bg(paint(bg));
             } else {
-                // Monochrome: everything in text color, things that move stand out by weight only.
-                style = style.fg(paint(s.theme.text));
+                // Monochrome: open ground fades into the background, the rest stands out by weight only.
+                style = style.fg(paint(if ground { s.theme.dim } else { s.theme.text }));
                 if p == facing {
                     style = style.add_modifier(Modifier::UNDERLINED);
                 }

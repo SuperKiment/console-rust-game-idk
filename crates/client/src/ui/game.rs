@@ -166,7 +166,8 @@ fn draw_log(f: &mut Frame, app: &App, t: &Theme, area: Rect, block: Block) {
         .take(rows)
         .rev()
         .map(|e| {
-            let time = Span::styled(format!("{} ", super::clock(e.time)), Style::new().fg(paint(t.dim)));
+            let time =
+                Span::styled(format!("{} ", super::clock(e.time % 86_400)), Style::new().fg(paint(t.dim)));
             let body = match &e.line.kind {
                 LogKind::Chat { from } => {
                     let c = app.state.online.iter().find(|(n, _)| n == from).map(|(_, c)| *c).unwrap_or(0);

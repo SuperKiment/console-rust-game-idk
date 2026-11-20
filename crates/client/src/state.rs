@@ -12,9 +12,13 @@ const KEEP_CHUNKS: i32 = 4;
 const LOG_SIZE: usize = 200;
 
 pub struct LogEntry {
-    /// Seconds since midnight, UTC.
+    /// Seconds since the Unix epoch.
     pub time: u64,
     pub line: LogLine,
+}
+
+pub fn unix_now() -> u64 {
+    SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
 
 #[derive(Default)]
@@ -66,9 +70,7 @@ impl GameState {
     }
 
     pub fn push_log(&mut self, line: LogLine) {
-        let time = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
-            % 86_400;
-        self.log.push_back(LogEntry { time, line });
+        self.log.push_back(LogEntry { time: unix_now(), line });
         if self.log.len() > LOG_SIZE {
             self.log.pop_front();
         }

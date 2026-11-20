@@ -27,3 +27,17 @@ pub const NORMAL: Theme = Theme {
     animal: Rgb(230, 210, 150),
     unknown: Rgb(12, 12, 16),
 };
+
+/// Grays only, no map colors: meant to pass for a text editor next to a log pane.
+/// `border` is the background of the tab and status bars.
+pub const INCOGNITO: Theme = Theme {
+    map_colors: false,
+    border: Rgb(44, 44, 44),
+    title: Rgb(200, 200, 200),
+    text: Rgb(185, 185, 185),
+    dim: Rgb(100, 100, 100),
+    accent: Rgb(215, 215, 215),
+    system: Rgb(140, 140, 140),
+    animal: Rgb(120, 120, 120),
+    unknown: Rgb(0, 0, 0),
+};
