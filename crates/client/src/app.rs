@@ -77,6 +77,7 @@ impl App {
                     self.state.push_log(LogLine::new(LogKind::System, format!("Disconnected: {reason}")));
                 }
                 self.state.me = None;
+                self.state.online.clear();
                 self.status = Status::Offline(reason);
             }
             NetEvent::Rejected(reason) => self.status = Status::Rejected(reason),
