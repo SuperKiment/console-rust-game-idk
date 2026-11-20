@@ -24,5 +24,5 @@ Les plages ne sont volontairement pas recopiées ici : elles se périmaient. L'i
 ## Docs communes (`project-specific-docs/`)
 <!-- guide-*.md communs à tous les dépôts. -->
 
-## Dépôt / projet `<nom>`
-<!-- Une section par dépôt ou projet de 1er niveau : vue-ensemble.md du dépôt, conventions-*.md, domaine-*.md, puis les projets. -->
+## Dépôt `console-rust-game-idk`
+- [guide-ajout-contenu.md](project-specific-docs/console-rust-game-idk/guide-ajout-contenu.md) — ajouter tuiles, biomes, animaux, effets via les tables de contenu.
