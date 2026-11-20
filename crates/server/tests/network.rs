@@ -118,23 +118,20 @@ async fn world_and_players_persist_across_restarts() {
     let (addr, stop, task) = start(Some(dir.clone())).await;
     let (mut r, mut w, me) = connect(addr, "carol").await;
     let start_pos = wait_for(&mut r, |m| my_pos(m, me)).await;
-    // Walk until a step succeeds, so the saved position differs from the spawn point.
-    let mut moved = start_pos;
-    for dir in [Dir::East, Dir::South, Dir::West, Dir::North].into_iter().cycle().take(40) {
+    // Walk a path that does not loop back; on open ground at least one step succeeds.
+    for dir in [Dir::East, Dir::East, Dir::South, Dir::South, Dir::West, Dir::North] {
         w.send(&ClientMsg::Move(dir)).await.unwrap();
         tokio::time::sleep(Duration::from_millis(120)).await;
-        moved = wait_for(&mut r, |m| my_pos(m, me)).await;
-        if moved != start_pos {
-            break;
-        }
     }
     let _ = stop.send(());
     task.await.unwrap();
-    assert!(dir.join("world.bin").exists());
+    let save = idk_server::save::read(&dir).unwrap().expect("world saved on shutdown");
+    let saved = save.players.iter().find(|(n, ..)| n == "carol").map(|(_, p, _)| *p).unwrap();
+    assert_ne!(saved, start_pos, "player should have moved");
 
     let (addr, stop, task) = start(Some(dir.clone())).await;
     let (mut r, _w, me) = connect(addr, "carol").await;
-    assert_eq!(wait_for(&mut r, |m| my_pos(m, me)).await, moved);
+    assert_eq!(wait_for(&mut r, |m| my_pos(m, me)).await, saved);
     let _ = stop.send(());
     task.await.unwrap();
     let _ = std::fs::remove_dir_all(&dir);

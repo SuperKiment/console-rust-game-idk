@@ -18,7 +18,7 @@ pub const TICK: Duration = Duration::from_millis(50);
 const MOVE_COOLDOWN: Duration = Duration::from_millis(90);
 /// Chunks streamed around each player (radius, in chunks).
 pub const VIEW_CHUNKS: i32 = 3;
-const VIEW_TILES: i32 = VIEW_CHUNKS * CHUNK_SIZE;
+pub const VIEW_TILES: i32 = VIEW_CHUNKS * CHUNK_SIZE;
 const MAX_CHAT: usize = 240;
 const MAX_NAME: usize = 16;
 
@@ -189,7 +189,8 @@ impl Game {
     fn try_move(&mut self, conn: ConnId, dir: Dir, now: Instant) {
         let Some(p) = self.players.get(&conn) else { return };
         let target = p.pos.step(dir);
-        let free = self.world.tile(target).def().walkable && self.animal_at(target).is_none();
+        // Animals step aside: they never block players (a following dog would be a nuisance).
+        let free = self.world.tile(target).def().walkable;
         let p = self.players.get_mut(&conn).expect("checked above");
         p.facing = dir;
         p.pending_move = None;
@@ -278,10 +279,10 @@ impl Game {
         self.broadcast(ServerMsg::Log(LogLine::new(kind, text)));
     }
 
-    /// Log line for every player who can see `pos`.
-    pub fn log_near(&self, pos: Pos, kind: LogKind, text: impl Into<String>) {
+    /// Log line for every player within `radius` tiles of `pos`.
+    pub fn log_near(&self, pos: Pos, radius: i32, kind: LogKind, text: impl Into<String>) {
         let line = LogLine::new(kind, text);
-        for p in self.players.values().filter(|p| p.pos.dist(pos) <= VIEW_TILES / 2) {
+        for p in self.players.values().filter(|p| p.pos.dist(pos) <= radius) {
             let _ = p.tx.send(ServerMsg::Log(line.clone()));
         }
     }
