@@ -16,6 +16,8 @@ pub struct Chunk {
     pub biomes: Vec<Biome>,
     /// Differs from what the generator produces: must be saved.
     pub modified: bool,
+    /// Animals generated with the chunk, not yet handed to the game.
+    pending_spawns: Vec<(Species, Pos)>,
 }
 
 pub struct World {
@@ -38,19 +40,23 @@ impl World {
         }
     }
 
-    /// Makes sure a chunk exists. Returns the animals to create if it is generated for the very first time.
+    /// Makes sure a chunk exists and hands over its animals the first time it is called for it.
     pub fn load(&mut self, cp: ChunkPos) -> Vec<(Species, Pos)> {
-        if self.chunks.contains_key(&cp) {
-            return Vec::new();
-        }
-        let g = self.generator.generate(cp);
-        self.chunks.insert(cp, Chunk { tiles: g.tiles, biomes: g.biomes, modified: false });
-        if self.spawned.insert(cp) { g.spawns } else { Vec::new() }
+        self.chunk(cp);
+        let fresh = self.spawned.insert(cp);
+        let chunk = self.chunks.get_mut(&cp).expect("generated above");
+        if fresh { std::mem::take(&mut chunk.pending_spawns) } else { Vec::new() }
     }
 
+    /// The chunk, generated if needed (its animals wait in `pending_spawns` until [`World::load`]).
     fn chunk(&mut self, cp: ChunkPos) -> &mut Chunk {
-        self.load(cp);
-        self.chunks.get_mut(&cp).expect("chunk loaded above")
+        let (generator, spawned) = (&self.generator, &self.spawned);
+        self.chunks.entry(cp).or_insert_with(|| {
+            let g = generator.generate(cp);
+            // A chunk whose animals were created before a restart regenerates without them.
+            let pending_spawns = if spawned.contains(&cp) { Vec::new() } else { g.spawns };
+            Chunk { tiles: g.tiles, biomes: g.biomes, modified: false, pending_spawns }
+        })
     }
 
     /// Tile at `p`. Unloaded chunks are generated (their animals are created later, when a player comes near).
@@ -97,8 +103,34 @@ impl World {
         w.spawned.extend(spawned);
         for (cp, tiles) in modified {
             let biomes = w.generator.generate(cp).biomes;
-            w.chunks.insert(cp, Chunk { tiles, biomes, modified: true });
+            w.chunks.insert(cp, Chunk { tiles, biomes, modified: true, pending_spawns: Vec::new() });
         }
         w
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reading_a_tile_does_not_lose_the_chunk_animals() {
+        let mut w = World::new(9);
+        // Find a chunk with animals, touch it through a tile read first, then load it.
+        let cp = (0..200)
+            .map(|i| ChunkPos::new(i, 0))
+            .find(|cp| !World::new(9).load(*cp).is_empty())
+            .expect("some chunk has animals");
+        let expected = World::new(9).load(cp);
+        w.tile(cp.origin());
+        assert_eq!(w.load(cp), expected);
+        assert!(w.load(cp).is_empty(), "animals are handed over once");
+    }
+
+    #[test]
+    fn restored_world_does_not_respawn_animals() {
+        let cp = ChunkPos::new(0, 0);
+        let mut w = World::restore(9, [], [cp]);
+        assert!(w.load(cp).is_empty());
     }
 }
