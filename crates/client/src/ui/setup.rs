@@ -42,7 +42,7 @@ pub fn draw(f: &mut Frame, w: &Wizard) {
     );
     let mut block = Block::bordered()
         .border_style(Style::new().fg(paint(t.border)))
-        .title(Span::styled(" idk · configuration ", Style::new().fg(paint(t.title)).bold()));
+        .title(Span::styled(" idk · setup ", Style::new().fg(paint(t.title)).bold()));
     block = if w.glyphs == GlyphSet::Ascii {
         block.border_set(ASCII_BORDER)
     } else {
@@ -62,7 +62,7 @@ pub fn draw(f: &mut Frame, w: &Wizard) {
     let mut lines: Vec<Line> = Vec::new();
     match w.step {
         Step::Unicode => {
-            lines.push(Line::styled("Symboles Unicode", accent));
+            lines.push(Line::styled("Unicode symbols", accent));
             lines.push(Line::from(""));
             lines.push(symbols_line(
                 w,
@@ -70,21 +70,21 @@ pub fn draw(f: &mut Frame, w: &Wizard) {
             ));
             lines.push(Line::from(""));
             lines.extend(frame_lines(w));
-            lines.extend(ask("Ces symboles s'affichent-ils correctement ?", "(y) oui   (n) non"));
+            lines.extend(ask("Do these symbols display correctly?", "(y) yes   (n) no"));
         }
         Step::EmojiWidth => {
             let (tree, cow) = (Tile::Tree.def().glyph.wide, Species::Cow.def().glyph.wide);
-            lines.push(Line::styled("Largeur des emoji", accent));
+            lines.push(Line::styled("Emoji width", accent));
             lines.push(Line::from(""));
             lines.push(Line::styled(format!("|{cow}|{tree}|"), text));
             lines.push(Line::styled("|xx|xx|", text));
-            lines.extend(ask("Les barres verticales sont-elles alignées ?", "(y) oui   (n) non"));
+            lines.extend(ask("Are the vertical bars aligned?", "(y) yes   (n) no"));
         }
         Step::GlyphSet => {
-            lines.push(Line::styled("Quel rendu de carte préfères-tu ?", accent));
+            lines.push(Line::styled("Which map style do you prefer?", accent));
             for (label, set) in [
-                ("1) Unicode (1 cellule par case)", GlyphSet::Unicode),
-                ("2) Wide (emoji, 2 cellules par case)", GlyphSet::Wide),
+                ("1) Unicode (1 cell per tile)", GlyphSet::Unicode),
+                ("2) Wide (emoji, 2 cells per tile)", GlyphSet::Wide),
             ] {
                 lines.push(Line::from(""));
                 lines.push(Line::styled(label, text.bold()));
@@ -93,55 +93,55 @@ pub fn draw(f: &mut Frame, w: &Wizard) {
             lines.extend(ask("", "(1) Unicode   (2) Wide"));
         }
         Step::Colors => {
-            lines.push(Line::styled("Couleurs", accent));
+            lines.push(Line::styled("Colors", accent));
             lines.push(Line::from(""));
             lines.push(gradient());
-            lines.extend(ask("Le dégradé est-il lisse (sans paliers visibles) ?", "(y) oui   (n) non"));
+            lines.extend(ask("Is the gradient smooth (no visible bands)?", "(y) yes   (n) no"));
         }
         Step::Name => {
-            lines.push(Line::styled("Joueur", accent));
-            lines.extend(ask("Ton nom en jeu", "Entrée pour valider"));
+            lines.push(Line::styled("Player", accent));
+            lines.extend(ask("Your in-game name", "Enter to confirm"));
             lines.push(Line::from(""));
             lines.push(input_line(&w.name_input, &w.base.name, text, dim));
         }
         Step::Server => {
-            lines.push(Line::styled("Serveur", accent));
-            lines.extend(ask("Adresse du serveur (hôte:port)", "Entrée pour valider"));
+            lines.push(Line::styled("Server", accent));
+            lines.extend(ask("Server address (host:port)", "Enter to confirm"));
             lines.push(Line::from(""));
             lines.push(input_line(&w.server_input, &w.base.server, text, dim));
         }
         Step::Incognito => {
             lines.push(Line::styled("Incognito", accent));
-            let default = if w.incognito { "oui" } else { "non" };
+            let default = if w.incognito { "yes" } else { "no" };
             lines.extend(ask(
-                "Démarrer en mode incognito par défaut ?",
-                &format!("(y) oui   (n) non   Entrée = {default}"),
+                "Start in incognito mode by default?",
+                &format!("(y) yes   (n) no   Enter = {default}"),
             ));
         }
         Step::Summary => {
             let c = w.config();
-            lines.push(Line::styled("Récapitulatif", accent));
+            lines.push(Line::styled("Summary", accent));
             lines.push(Line::from(""));
             for (k, v) in [
-                ("nom", c.name),
-                ("serveur", c.server),
-                ("glyphes", format!("{:?}", c.glyphs).to_lowercase()),
-                ("couleurs", format!("{:?}", c.colors).to_lowercase()),
-                ("incognito", if c.incognito { "oui" } else { "non" }.to_string()),
+                ("name", c.name),
+                ("server", c.server),
+                ("glyphs", format!("{:?}", c.glyphs).to_lowercase()),
+                ("colors", format!("{:?}", c.colors).to_lowercase()),
+                ("incognito", if c.incognito { "yes" } else { "no" }.to_string()),
             ] {
                 lines.push(Line::from(vec![Span::styled(format!("{k:<11}"), dim), Span::styled(v, text)]));
             }
             lines.push(Line::from(""));
             lines.extend(preview(c.glyphs, c.colors));
             lines.push(Line::from(""));
-            lines.push(Line::styled("Entrée : enregistrer", accent));
+            lines.push(Line::styled("Enter: save", accent));
         }
     }
     f.render_widget(Paragraph::new(lines), body);
 
-    let back = if w.step == Step::Unicode { "" } else { "   Backspace : précédent" };
+    let back = if w.step == Step::Unicode { "" } else { "   Backspace: back" };
     f.render_widget(
-        Paragraph::new(format!("Esc : quitter sans enregistrer{back}")).style(dim).alignment(Alignment::Left),
+        Paragraph::new(format!("Esc: quit without saving{back}")).style(dim).alignment(Alignment::Left),
         hint,
     );
 }
@@ -196,19 +196,12 @@ fn gradient() -> Line<'static> {
 
 /// Typed text with a cursor, or the dim default when nothing is typed yet.
 fn input_line(typed: &str, default: &str, text: Style, dim: Style) -> Line<'static> {
-    if typed.is_empty() {
-        Line::from(vec![
-            Span::styled("> ", text),
-            Span::styled(default.to_string(), dim),
-            Span::styled("▏", text),
-        ])
-    } else {
-        Line::from(vec![
-            Span::styled("> ", text),
-            Span::styled(typed.to_string(), text),
-            Span::styled("▏", text),
-        ])
-    }
+    let (shown, style) = if typed.is_empty() { (default, dim) } else { (typed, text) };
+    Line::from(vec![
+        Span::styled("> ", text),
+        Span::styled(shown.to_string(), style),
+        Span::styled("▏", text),
+    ])
 }
 
 /// Three rows of sample map drawn with `set` and `colors`, same symbols and colors as the game.

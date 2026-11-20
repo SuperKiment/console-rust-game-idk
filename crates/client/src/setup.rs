@@ -91,75 +91,75 @@ impl Wizard {
         {
             return Outcome::Cancel;
         }
-        let text_step = matches!(self.step, Step::Name | Step::Server);
-        match key.code {
-            KeyCode::Backspace => {
-                let input = match self.step {
-                    Step::Name => Some(&mut self.name_input),
-                    Step::Server => Some(&mut self.server_input),
-                    _ => None,
-                };
-                match input {
-                    Some(text) if !text.is_empty() => {
-                        text.pop();
-                    }
-                    _ => self.back(),
-                }
+        match (key.code, self.input()) {
+            (KeyCode::Backspace, Some((text, _))) if !text.is_empty() => {
+                text.pop();
             }
-            KeyCode::Char(c) if text_step => {
-                let (text, max) = match self.step {
-                    Step::Name => (&mut self.name_input, MAX_NAME),
-                    _ => (&mut self.server_input, MAX_SERVER),
-                };
+            (KeyCode::Backspace, _) => self.back(),
+            (KeyCode::Char(c), Some((text, max))) => {
                 if !c.is_control() && text.chars().count() < max {
                     text.push(c);
                 }
             }
-            code => {
-                if let Some(done) = self.answer(code) {
-                    return done;
-                }
-            }
+            (code, _) => return self.answer(code),
         }
         Outcome::Continue
     }
 
-    /// Key press on a non-text screen. Returns the outcome when the wizard is over.
-    fn answer(&mut self, code: KeyCode) -> Option<Outcome> {
+    /// Text buffer and max length of the current screen, if it is a text step.
+    fn input(&mut self) -> Option<(&mut String, usize)> {
+        match self.step {
+            Step::Name => Some((&mut self.name_input, MAX_NAME)),
+            Step::Server => Some((&mut self.server_input, MAX_SERVER)),
+            _ => None,
+        }
+    }
+
+    /// Key press on a non-text screen.
+    fn answer(&mut self, code: KeyCode) -> Outcome {
         let key = match code {
             KeyCode::Char(c) => c.to_ascii_lowercase(),
             KeyCode::Enter => '\n',
-            _ => return None,
+            _ => return Outcome::Continue,
         };
+        let yes = key == 'y';
         match (self.step, key) {
-            (Step::Unicode, 'y') => self.go(Step::EmojiWidth),
-            (Step::Unicode, 'n') => {
-                self.glyphs = GlyphSet::Ascii;
-                self.go(Step::Colors);
+            (Step::Unicode, 'y' | 'n') => {
+                if yes {
+                    self.go(Step::EmojiWidth);
+                } else {
+                    self.glyphs = GlyphSet::Ascii;
+                    self.go(Step::Colors);
+                }
             }
-            (Step::EmojiWidth, 'y') => self.go(Step::GlyphSet),
-            (Step::EmojiWidth, 'n') => {
-                self.glyphs = GlyphSet::Unicode;
-                self.go(Step::Colors);
+            (Step::EmojiWidth, 'y' | 'n') => {
+                if yes {
+                    self.go(Step::GlyphSet);
+                } else {
+                    self.glyphs = GlyphSet::Unicode;
+                    self.go(Step::Colors);
+                }
             }
             (Step::GlyphSet, '1' | '2') => {
                 self.glyphs = if key == '1' { GlyphSet::Unicode } else { GlyphSet::Wide };
                 self.go(Step::Colors);
             }
             (Step::Colors, 'y' | 'n') => {
-                self.colors = if key == 'y' { ColorDepth::Truecolor } else { ColorDepth::Ansi256 };
+                self.colors = if yes { ColorDepth::Truecolor } else { ColorDepth::Ansi256 };
                 self.go(Step::Name);
             }
             (Step::Name, '\n') => self.go(Step::Server),
             (Step::Server, '\n') => self.go(Step::Incognito),
             (Step::Incognito, 'y' | 'n' | '\n') => {
-                self.incognito = if key == '\n' { self.incognito } else { key == 'y' };
+                if key != '\n' {
+                    self.incognito = yes;
+                }
                 self.go(Step::Summary);
             }
-            (Step::Summary, '\n') => return Some(Outcome::Done(self.config())),
+            (Step::Summary, '\n') => return Outcome::Done(self.config()),
             _ => {}
         }
-        None
+        Outcome::Continue
     }
 
     fn go(&mut self, next: Step) {
