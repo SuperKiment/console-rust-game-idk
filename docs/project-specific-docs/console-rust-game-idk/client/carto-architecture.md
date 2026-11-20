@@ -79,7 +79,7 @@ stateDiagram-v2
 ```
 
 - Les touches envoyées pendant la coupure sont vidées avant de se reconnecter (`while out.try_recv().is_ok()`).
-- À `Disconnected`, `GameState.me` et `online` sont remis à vide  ; la carte devient vide (`map::render` ne dessine rien sans `me`) sous le popup de statut. À `Welcome`, tout l'état est remplacé sauf le journal.
+- À `Disconnected`, `GameState.me` et `online` sont remis à vide ; la carte devient vide (`map::render` ne dessine rien sans `me`) sous le popup de statut. À `Welcome`, tout l'état est remplacé sauf le journal.
 - Le statut passe à `Online` dès le premier message, `Welcome` inclus.
 
 ## GameState
