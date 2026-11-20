@@ -58,7 +58,7 @@ flowchart LR
 1. **Mouvements** : exécute le `pending_move` des joueurs dont `next_move` est échu.
 2. **IA** : `ai::step`.
 3. **Streaming de chunks** : `stream_chunks` pour chaque joueur.
-4. **Entités** : `send_entities` envoie à chaque joueur les entités à moins de `VIEW_TILES` (96 tuiles).
+4. **Entités** : `send_entities` envoie à chaque joueur les entités à moins de `VIEW_TILES` (96 tuiles). Le filtre par distance passe avant le clonage : seules les entités visibles sont copiées.
 
 Un `Move` reçu hors cooldown (`MOVE_COOLDOWN` = 90 ms) s'exécute tout de suite dans `handle`. Sinon, il est mémorisé en `pending_move` (un seul, le dernier) pour le prochain tick.
 
@@ -96,10 +96,10 @@ flowchart TD
 
 ### Streaming de chunks
 
-`Game::stream_chunks(conn)` : pour chaque chunk dans le rayon `VIEW_CHUNKS` (3) autour du joueur non présent dans `Player.sent`, appelle `world.load`, crée les animaux fraîchement apparus (`next_id`), envoie `ServerMsg::Chunk` et l'ajoute à `sent`. Les chunks à plus de `VIEW_CHUNKS + 1` sont retirés de `sent` (le client les oublie aussi, `KEEP_CHUNKS` = 4) ; ils seront renvoyés au retour.
+`Game::stream_chunks(conn)` : pour chaque chunk dans le rayon `VIEW_CHUNKS` (3, `crates/shared/src/protocol.rs`) autour du joueur non présent dans `Player.sent`, appelle `world.load`, crée les animaux fraîchement apparus (`next_id`), envoie `ServerMsg::Chunk` et l'ajoute à `sent`. Les chunks à plus de `KEEP_CHUNKS` (= `VIEW_CHUNKS + 1`, partagé avec le client) sont retirés de `sent` ; le client les oublie à la même distance, ils seront renvoyés au retour.
 
 > [!NOTE]
-> Les animaux ne disparaissent jamais d'eux-mêmes. Ils sont simplement gelés quand aucun joueur n'est à moins de `ACTIVE_RADIUS` (= `VIEW_TILES`) tuiles.
+> Les animaux ne disparaissent jamais d'eux-mêmes. Ils sont simplement gelés quand aucun joueur n'est à moins de `ACTIVE_RADIUS` (= `VIEW_TILES`, soit 2 à 5 fois la zone affichée par un terminal 120×40) tuiles.
 
 ## IA des animaux (paramétrique)
 

@@ -5,10 +5,8 @@ use std::time::{Duration, Instant, SystemTime};
 
 use idk_shared::content::{Biome, Effect, Tile};
 use idk_shared::geo::{ChunkPos, Pos};
-use idk_shared::protocol::{ChunkData, EntityId, EntityView, LogLine, ServerMsg};
+use idk_shared::protocol::{ChunkData, EntityId, EntityView, KEEP_CHUNKS, LogLine, ServerMsg};
 
-/// Must match the server's streaming radius + 1 (chunks farther away stop receiving updates).
-const KEEP_CHUNKS: i32 = 4;
 const LOG_SIZE: usize = 200;
 
 pub struct LogEntry {
