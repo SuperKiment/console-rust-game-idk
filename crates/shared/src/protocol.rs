@@ -10,6 +10,11 @@ use crate::geo::{CHUNK_AREA, ChunkPos, Dir, Pos};
 
 pub const PROTOCOL_VERSION: u32 = 1;
 pub const DEFAULT_PORT: u16 = 7777;
+/// Radius (in chunks) of the area the server streams around each player.
+pub const VIEW_CHUNKS: i32 = 3;
+/// Chunks farther than this are forgotten by both sides: the server resends them on return.
+/// The client must not drop a chunk the server still considers sent, hence a single constant.
+pub const KEEP_CHUNKS: i32 = VIEW_CHUNKS + 1;
 
 /// Identifier of anything that moves (players and animals share the id space).
 pub type EntityId = u32;

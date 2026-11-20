@@ -89,13 +89,13 @@ stateDiagram-v2
 | Champ | Alimenté par |
 |---|---|
 | `me`, `name`, `seed` | `Welcome` |
-| `chunks` (privé) | `Chunk` (ignoré si invalide), `TileChanged` ; purge au-delà de `KEEP_CHUNKS` = 4 chunks de la position du joueur |
+| `chunks` (privé) | `Chunk` (ignoré si invalide), `TileChanged` ; purge au-delà de `KEEP_CHUNKS` (4, `crates/shared/src/protocol.rs`) chunks de la position du joueur |
 | `entities` | `Entities` (remplacement complet à chaque tick) |
 | `online` | `Online` |
 | `log` | `Log` et lignes locales ; 200 entrées max (`LOG_SIZE`), horodatées à la réception |
 | `effects` | `Effect`, expiration selon `duration_ms` de l'effet |
 
-`KEEP_CHUNKS` doit rester égal à `VIEW_CHUNKS + 1` côté serveur (voir [server/carto-architecture.md](../server/carto-architecture.md), section « Streaming de chunks »). Lors du dessin, un joueur passe devant un animal sur la même tuile (`entity_at`).
+`KEEP_CHUNKS` est partagé avec le serveur (voir [server/carto-architecture.md](../server/carto-architecture.md), section « Streaming de chunks ») : client et serveur oublient un chunk à la même distance. Lors du dessin, un joueur passe devant un animal sur la même tuile (`entity_at`).
 
 ## Layouts
 

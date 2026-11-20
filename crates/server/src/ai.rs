@@ -8,7 +8,9 @@ use idk_shared::protocol::{EntityId, LogKind};
 
 use crate::game::{ConnId, Game, VIEW_TILES};
 
-/// Animals farther than this from every player are frozen.
+/// Animals farther than this from every player are frozen. Equal to the streaming radius (96 tiles),
+/// already 2 to 5 times what a 120x40 terminal shows (±44 tiles wide, ±19 high): simulating farther
+/// would only animate animals in chunks no client holds.
 const ACTIVE_RADIUS: i32 = VIEW_TILES;
 /// A follower farther than this from its owner catches up instantly.
 const TELEPORT_DIST: i32 = 40;
@@ -189,5 +191,32 @@ mod tests {
         let (mut g, cow, _rx, now) = setup(Species::Cow, (0, 1));
         g.event(Event::Msg(1, ClientMsg::Interact(Dir::South)), now);
         assert_eq!(g.animals[&cow].tamed_by, None);
+    }
+
+    #[test]
+    fn entities_outside_view_are_not_sent() {
+        let (mut g, far, mut rx, now) = setup(Species::Cow, (VIEW_TILES + 5, 0));
+        let near = g.alloc_id();
+        let pos = g.players[&1].pos.step(Dir::East);
+        g.animals.insert(
+            near,
+            Animal {
+                id: near,
+                species: Species::Cow,
+                pos,
+                facing: Dir::South,
+                tamed_by: None,
+                next_step: now,
+            },
+        );
+        g.tick(now);
+        let mut last = None;
+        while let Ok(msg) = rx.try_recv() {
+            if let ServerMsg::Entities(e) = msg {
+                last = Some(e);
+            }
+        }
+        let ids: Vec<EntityId> = last.expect("entities sent").iter().map(|e| e.id).collect();
+        assert!(ids.contains(&near) && !ids.contains(&far));
     }
 }

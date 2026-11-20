@@ -6,7 +6,9 @@ use std::time::{Duration, Instant};
 
 use idk_shared::content::{Effect, Species, Tile, player_color_index};
 use idk_shared::geo::{CHUNK_SIZE, ChunkPos, Dir, Pos};
-use idk_shared::protocol::{ClientMsg, EntityId, EntityView, LogKind, LogLine, Look, ServerMsg};
+use idk_shared::protocol::{
+    ClientMsg, EntityId, EntityView, KEEP_CHUNKS, LogKind, LogLine, Look, ServerMsg, VIEW_CHUNKS,
+};
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::rng::Rng;
@@ -16,8 +18,6 @@ pub type ConnId = u64;
 
 pub const TICK: Duration = Duration::from_millis(50);
 const MOVE_COOLDOWN: Duration = Duration::from_millis(90);
-/// Chunks streamed around each player (radius, in chunks).
-pub const VIEW_CHUNKS: i32 = 3;
 pub const VIEW_TILES: i32 = VIEW_CHUNKS * CHUNK_SIZE;
 const MAX_CHAT: usize = 240;
 const MAX_NAME: usize = 16;
@@ -324,26 +324,26 @@ impl Game {
             let _ = p.tx.send(ServerMsg::Chunk(world.chunk_data(cp)));
             p.sent.insert(cp);
         }
-        p.sent.retain(|c| c.dist(center) <= VIEW_CHUNKS + 1);
+        p.sent.retain(|c| c.dist(center) <= KEEP_CHUNKS);
     }
 
+    /// Sends each player the entities in its view; only those are cloned.
     fn send_entities(&self) {
-        let players = self.players.values().map(|p| EntityView {
-            id: p.id,
-            pos: p.pos,
-            facing: p.facing,
-            look: Look::Player { name: p.name.clone(), color: p.color },
-        });
-        let animals = self.animals.values().map(|a| EntityView {
-            id: a.id,
-            pos: a.pos,
-            facing: a.facing,
-            look: Look::Animal { species: a.species, tamed_by: a.tamed_by.clone() },
-        });
-        let all: Vec<EntityView> = players.chain(animals).collect();
         for p in self.players.values() {
-            let near = all.iter().filter(|e| e.pos.dist(p.pos) <= VIEW_TILES).cloned().collect();
-            let _ = p.tx.send(ServerMsg::Entities(near));
+            let near = |pos: Pos| pos.dist(p.pos) <= VIEW_TILES;
+            let players = self.players.values().filter(|o| near(o.pos)).map(|o| EntityView {
+                id: o.id,
+                pos: o.pos,
+                facing: o.facing,
+                look: Look::Player { name: o.name.clone(), color: o.color },
+            });
+            let animals = self.animals.values().filter(|a| near(a.pos)).map(|a| EntityView {
+                id: a.id,
+                pos: a.pos,
+                facing: a.facing,
+                look: Look::Animal { species: a.species, tamed_by: a.tamed_by.clone() },
+            });
+            let _ = p.tx.send(ServerMsg::Entities(players.chain(animals).collect()));
         }
     }
 }
