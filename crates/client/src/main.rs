@@ -2,6 +2,7 @@ mod app;
 mod config;
 mod input;
 mod net;
+mod setup;
 mod state;
 mod ui;
 
@@ -19,19 +20,36 @@ struct Args {
     /// Start in incognito mode.
     #[arg(long)]
     incognito: bool,
+    /// Run the setup wizard even if a config exists.
+    #[arg(long)]
+    configure: bool,
 }
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
     let args = Args::parse();
-    let mut config = match config::load()? {
-        Some(c) => c,
-        None => {
-            let c = config::Config::default();
+    let saved = config::load()?;
+    let mut terminal = ratatui::init();
+    let result = start(&mut terminal, args, saved).await;
+    ratatui::restore();
+    result
+}
+
+async fn start(
+    terminal: &mut ratatui::DefaultTerminal,
+    args: Args,
+    saved: Option<config::Config>,
+) -> std::io::Result<()> {
+    let mut config = match saved {
+        Some(c) if !args.configure => c,
+        base => {
+            // First launch or `--configure`: ask, then save. Cancelling quits without saving.
+            let Some(c) = setup::run(terminal, base.unwrap_or_default())? else { return Ok(()) };
             config::save(&c)?;
             c
         }
     };
+    // Command-line overrides last the session only; they are never written back.
     if let Some(s) = args.server {
         config.server = s;
     }
@@ -39,9 +57,5 @@ async fn main() -> std::io::Result<()> {
         config.name = n;
     }
     config.incognito |= args.incognito;
-
-    let mut terminal = ratatui::init();
-    let result = app::run(&mut terminal, config).await;
-    ratatui::restore();
-    result
+    app::run(terminal, config).await
 }

@@ -3,6 +3,7 @@
 mod game;
 pub mod glyphs;
 pub mod map;
+pub mod setup;
 pub mod theme;
 
 use ratatui::Frame;

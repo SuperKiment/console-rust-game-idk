@@ -24,7 +24,7 @@ pub enum ColorDepth {
     Ansi256,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
     pub name: String,
