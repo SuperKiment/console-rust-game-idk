@@ -1,0 +1,2 @@
+Copie du plugin Superpowers v7.0.0 (MIT, Jesse Vincent), https://github.com/obra/superpowers, commit bb92a77741419a4ab5f06e711a283343f1ada0c3.
+Voie recommandée : installer le plugin (/plugin install superpowers@claude-plugins-official). Cette copie sert de repli hors ligne : coller chaque dossier dans .claude/skills/.
