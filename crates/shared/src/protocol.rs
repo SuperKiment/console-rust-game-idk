@@ -52,6 +52,8 @@ pub enum ServerMsg {
         pos: Pos,
         effect: Effect,
     },
+    /// Everyone connected, as `(name, color)`. Sent on every join and leave.
+    Online(Vec<(String, u8)>),
     /// Connection refused (e.g. protocol mismatch). The server closes the socket after it.
     Rejected(String),
 }
