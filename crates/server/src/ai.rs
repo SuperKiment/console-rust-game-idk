@@ -92,9 +92,14 @@ fn free(game: &mut Game, pos: Pos) -> bool {
 /// Steps in `dir`, or sidesteps when blocked.
 fn try_step(game: &mut Game, id: EntityId, dir: Dir) {
     let pos = game.animals[&id].pos;
-    let side = if game.rng.chance(0.5) { [Dir::North, Dir::South] } else { [Dir::East, Dir::West] };
+    // Côtés perpendiculaires à `dir`, dans un ordre aléatoire pour ne pas biaiser le contournement.
+    let [l, r] = match dir {
+        Dir::North | Dir::South => [Dir::East, Dir::West],
+        Dir::East | Dir::West => [Dir::North, Dir::South],
+    };
+    let side = if game.rng.chance(0.5) { [l, r] } else { [r, l] };
     let options = [dir, side[0], side[1]];
-    if let Some(d) = options.into_iter().filter(|d| *d != dir.opposite()).find(|d| free(game, pos.step(*d))) {
+    if let Some(d) = options.into_iter().find(|d| free(game, pos.step(*d))) {
         let a = game.animals.get_mut(&id).expect("animal exists");
         a.pos = pos.step(d);
         a.facing = d;
@@ -178,6 +183,19 @@ mod tests {
 
         pet(&mut g, 1, dog, now);
         assert_eq!(g.animals[&dog].tamed_by, None, "petting again releases it");
+    }
+
+    #[test]
+    fn blocked_animal_sidesteps_around_a_wall() {
+        for seed_offset in 0..20 {
+            let (mut g, cow, _rx, _now) = setup(Species::Cow, (5, 5));
+            g.rng = crate::rng::Rng::new(seed_offset);
+            let pos = g.animals[&cow].pos;
+            g.world.set_tile(pos.step(Dir::North), Tile::Wall);
+            g.world.set_tile(pos.step(Dir::West), Tile::Wall);
+            try_step(&mut g, cow, Dir::North);
+            assert_eq!(g.animals[&cow].pos, pos.step(Dir::East), "seed {seed_offset}");
+        }
     }
 
     #[test]
