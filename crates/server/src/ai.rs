@@ -118,7 +118,7 @@ fn teleport_near(game: &mut Game, id: EntityId, target: Pos) {
 }
 
 /// A player pets an animal: a reaction, and tameable animals start (or stop) following them.
-pub fn pet(game: &mut Game, conn: ConnId, id: EntityId, _now: Instant) {
+pub fn pet(game: &mut Game, conn: ConnId, id: EntityId) {
     let me = game.players[&conn].name.clone();
     let a = &game.animals[&id];
     let (def, pos, tamed_by) = (a.species.def(), a.pos, a.tamed_by.clone());
@@ -182,7 +182,7 @@ mod tests {
         run(&mut g, now, 10);
         assert!(g.animals[&dog].pos.dist(g.players[&1].pos) <= FOLLOW_DIST + 1);
 
-        pet(&mut g, 1, dog, now);
+        pet(&mut g, 1, dog);
         assert_eq!(g.animals[&dog].tamed_by, None, "petting again releases it");
     }
 

@@ -41,7 +41,7 @@ Définis dans `crates/shared/src/protocol.rs`.
 | `Log(LogLine)` | ligne de journal (`System`, `Info`, `Chat`, `Animal`) |
 | `Effect { pos, effect }` | effet visuel éphémère |
 | `Online(Vec<(String, u8)>)` | joueurs connectés `(nom, couleur)`, à chaque arrivée et départ |
-| `Rejected(String)` | refus (versions différentes, ou session remplacée : `replaced by new connection`) ; le serveur ferme ensuite le socket |
+| `Rejected(String)` | refus (versions différentes, handshake invalide `bad handshake, update your client`, ou session remplacée : `replaced by new connection`) ; le serveur ferme ensuite le socket |
 
 ## Séquence de connexion
 
@@ -51,7 +51,7 @@ sequenceDiagram
     participant N as Tâche connexion
     participant G as Game
     C->>N: Hello { version, name }
-    alt version différente
+    alt version différente, ou Hello illisible / premier message autre que Hello
         N-->>C: Rejected(raison)
         Note over C: pas de nouvel essai
     else version identique
@@ -73,6 +73,7 @@ Le point clé : `Entities` est le seul message périodique. Les chunks ne sont e
 ## Règles du serveur à l'accueil
 
 - `Hello` doit arriver en moins de `HELLO_TIMEOUT` (10 s), sinon la connexion est fermée en silence.
+- Premier message illisible (décodage impossible) ou différent de `Hello` : `Rejected("bad handshake, update your client")` puis fermeture. Timeout du `Hello` ou connexion fermée par le client : fermeture sans message.
 - Un `Hello` hors du premier message est ignoré.
 - Nom : caractères de contrôle supprimés puis espaces des bords retirés, 16 caractères max, `player` si vide (`clean_name`).
 - Nom déjà connecté : la nouvelle connexion **remplace** l'ancienne (plus de suffixe `2`, `3`…). L'ancienne reçoit `Rejected("replaced by new connection")` puis est fermée ; la nouvelle reprend l'id, la position et l'orientation (les animaux apprivoisés sont liés au nom, ils suivent donc). Le `Leave` tardif de l'ancienne connexion est sans effet : `Game.players` est indexé par `ConnId`.

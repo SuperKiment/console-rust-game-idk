@@ -223,7 +223,7 @@ impl Game {
             ClientMsg::Interact(dir) => {
                 p.facing = dir;
                 let target = p.pos.step(dir);
-                self.interact(conn, target, now);
+                self.interact(conn, target);
             }
             ClientMsg::Build(dir) => {
                 p.facing = dir;
@@ -259,9 +259,9 @@ impl Game {
         }
     }
 
-    fn interact(&mut self, conn: ConnId, target: Pos, now: Instant) {
+    fn interact(&mut self, conn: ConnId, target: Pos) {
         if let Some(id) = self.animal_at(target) {
-            crate::ai::pet(self, conn, id, now);
+            crate::ai::pet(self, conn, id);
         } else if let Some(other) = self.players.values().find(|p| p.pos == target).map(|p| p.name.clone()) {
             let me = self.players[&conn].name.clone();
             self.tell(conn, LogKind::Info, format!("You wave at {other}."));
