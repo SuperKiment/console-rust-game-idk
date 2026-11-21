@@ -56,7 +56,16 @@ async fn session(
     events: &UnboundedSender<NetEvent>,
     out: &mut UnboundedReceiver<ClientMsg>,
 ) -> std::io::Result<Option<String>> {
-    let (mut reader, mut writer) = net::split(TcpStream::connect(addr).await?);
+    let stream = match TcpStream::connect(addr).await {
+        Ok(s) => s,
+        // Adresse mal formée (ex. port hors plage) : réessayer ne servirait à rien.
+        // Un hôte inconnu (erreur DNS) reste en retry : l'échec peut être temporaire.
+        Err(e) if e.kind() == std::io::ErrorKind::InvalidInput => {
+            return Ok(Some(format!("invalid server address \"{addr}\" (expected host:port)")));
+        }
+        Err(e) => return Err(e),
+    };
+    let (mut reader, mut writer) = net::split(stream);
     writer.send(&ClientMsg::Hello { version: PROTOCOL_VERSION, name: name.to_string() }).await?;
     loop {
         tokio::select! {

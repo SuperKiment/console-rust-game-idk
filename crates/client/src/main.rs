@@ -53,6 +53,8 @@ async fn start(
     if let Some(s) = args.server {
         config.server = s;
     }
+    // Aussi pour l'adresse venant du fichier de config (éditée à la main).
+    config.server = config::normalize_server(&config.server);
     if let Some(n) = args.name {
         config.name = n;
     }
