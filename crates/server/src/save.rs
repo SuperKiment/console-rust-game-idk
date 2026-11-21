@@ -1,6 +1,6 @@
 //! World persistence: one postcard file, written atomically.
 
-use std::io;
+use std::io::{self, Write};
 use std::path::Path;
 use std::time::Instant;
 
@@ -70,6 +70,13 @@ pub fn write(dir: &Path, data: &SaveData) -> io::Result<()> {
     std::fs::create_dir_all(dir)?;
     let bytes = postcard::to_stdvec(data).map_err(io::Error::other)?;
     let tmp = dir.join(format!("{FILE}.tmp"));
-    std::fs::write(&tmp, bytes)?;
-    std::fs::rename(tmp, dir.join(FILE))
+    // fsync du tmp, puis du dossier après le rename : une coupure de courant ne laisse
+    // jamais un `world.bin` vide ou tronqué (soit l'ancien, soit le nouveau).
+    let mut file = std::fs::File::create(&tmp)?;
+    file.write_all(&bytes)?;
+    file.sync_all()?;
+    std::fs::rename(tmp, dir.join(FILE))?;
+    #[cfg(unix)]
+    std::fs::File::open(dir)?.sync_all()?;
+    Ok(())
 }

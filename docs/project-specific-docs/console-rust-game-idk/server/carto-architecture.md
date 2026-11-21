@@ -118,7 +118,7 @@ Priorité de décision dans `act` : animal apprivoisé trop loin (plus de `TELEP
 
 ## Sauvegarde
 
-`crates/server/src/save.rs` : un seul fichier postcard, `<world>/world.bin`, écrit via `world.bin.tmp` puis `rename` (atomique).
+`crates/server/src/save.rs` : un seul fichier postcard, `<world>/world.bin`, écrit via `world.bin.tmp` (fsync) puis `rename` (atomique) et fsync du dossier : une coupure de courant laisse l'ancien ou le nouveau fichier, jamais un fichier tronqué.
 
 | Champ de `SaveData` | Contenu |
 |---|---|

@@ -21,7 +21,11 @@ pub async fn accept_loop(listener: TcpListener, events: UnboundedSender<Event>) 
                 let conn = NEXT.fetch_add(1, Ordering::Relaxed);
                 tokio::spawn(handle(stream, conn, events.clone()));
             }
-            Err(e) => tracing::warn!("accept failed: {e}"),
+            Err(e) => {
+                tracing::warn!("accept failed: {e}");
+                // Erreur persistante (ex. EMFILE) : éviter une boucle chaude qui inonde les logs.
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
         }
     }
 }
