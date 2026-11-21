@@ -18,12 +18,18 @@ use crate::input::BINDINGS;
 
 const SIDEBAR: u16 = 32;
 const LOG_HEIGHT: u16 = 9;
+const SEED_MIN_WIDTH: u16 = 40;
+const LOG_MIN_HEIGHT: u16 = 4;
+const ME_HEIGHT: u16 = 6;
+const LIST_MIN_HEIGHT: u16 = 3;
 const NEARBY_RADIUS: i32 = 12;
 
 pub fn draw(f: &mut Frame, app: &App) {
     let t = &NORMAL;
     let paint = |c: Rgb| app.config.colors.paint(c);
-    let [main, log] = Layout::vertical([Constraint::Min(8), Constraint::Length(LOG_HEIGHT)]).areas(f.area());
+    // Journal : au plus un quart de la hauteur, jamais sous LOG_MIN_HEIGHT
+    let log_h = (f.area().height / 4).clamp(LOG_MIN_HEIGHT, LOG_HEIGHT);
+    let [main, log] = Layout::vertical([Constraint::Min(8), Constraint::Length(log_h)]).areas(f.area());
     let [map_area, side] = Layout::horizontal([Constraint::Min(20), Constraint::Length(SIDEBAR)]).areas(main);
 
     let block = |title: &str| {
@@ -35,7 +41,12 @@ pub fn draw(f: &mut Frame, app: &App) {
 
     // Map
     let s = &app.state;
-    let online = format!(" seed {} · {} online ", s.seed, s.online.len());
+    // Seed en hex court (8 caractères), seulement si le titre « idk » a la place
+    let online = if map_area.width >= SEED_MIN_WIDTH {
+        format!(" seed {:08x} · {} online ", s.seed as u32, s.online.len())
+    } else {
+        format!(" {} online ", s.online.len())
+    };
     let map_block =
         block("idk").title_top(Line::styled(online, Style::new().fg(paint(t.dim))).right_aligned());
     let inner = map_block.inner(map_area);
@@ -44,14 +55,24 @@ pub fn draw(f: &mut Frame, app: &App) {
     map::render(f.buffer_mut(), inner, s, &style, Instant::now());
 
     // Side panels
+    // Priorité de place : you > keys (entier ou masqué) > online > nearby
     let keys = BINDINGS.iter().filter(|b| b.help.is_some()).count() as u16;
-    let [me_area, online_area, nearby_area, keys_area] = Layout::vertical([
-        Constraint::Length(6),
-        Constraint::Min(3),
-        Constraint::Min(3),
-        Constraint::Length(keys + 2),
+    let keys_h = keys + 2;
+    let [me_area, rest] = Layout::vertical([Constraint::Length(ME_HEIGHT), Constraint::Min(0)]).areas(side);
+    let show_keys = rest.height >= keys_h;
+    let (keys_area, lists) = if show_keys {
+        let [k, l] = Layout::vertical([Constraint::Length(keys_h), Constraint::Min(0)]).areas(rest);
+        (Some(k), l)
+    } else {
+        (None, rest)
+    };
+    let show_online = lists.height >= LIST_MIN_HEIGHT;
+    let show_nearby = lists.height >= 2 * LIST_MIN_HEIGHT;
+    let [online_area, nearby_area] = Layout::vertical([
+        Constraint::Length(if show_nearby { lists.height / 2 } else { lists.height }),
+        Constraint::Min(0),
     ])
-    .areas(side);
+    .areas(lists);
     let dim = Style::new().fg(paint(t.dim));
     let text = Style::new().fg(paint(t.text));
     let kv =
@@ -91,7 +112,9 @@ pub fn draw(f: &mut Frame, app: &App) {
             Line::from(vec![Span::styled("@ ", style), Span::styled(name.clone(), style)])
         })
         .collect();
-    f.render_widget(Paragraph::new(online_lines).block(block("online")), online_area);
+    if show_online {
+        f.render_widget(Paragraph::new(online_lines).block(block("online")), online_area);
+    }
 
     let mut nearby: BTreeMap<&str, (usize, bool)> = BTreeMap::new();
     if let Some(pos) = s.my_pos() {
@@ -120,7 +143,9 @@ pub fn draw(f: &mut Frame, app: &App) {
             })
             .collect()
     };
-    f.render_widget(Paragraph::new(nearby_lines).block(block("nearby")), nearby_area);
+    if show_nearby {
+        f.render_widget(Paragraph::new(nearby_lines).block(block("nearby")), nearby_area);
+    }
 
     let key_lines: Vec<Line> = BINDINGS
         .iter()
@@ -132,7 +157,9 @@ pub fn draw(f: &mut Frame, app: &App) {
             ])
         })
         .collect();
-    f.render_widget(Paragraph::new(key_lines).block(block("keys")), keys_area);
+    if let Some(keys_area) = keys_area {
+        f.render_widget(Paragraph::new(key_lines).block(block("keys")), keys_area);
+    }
 
     draw_log(
         f,
@@ -246,7 +273,11 @@ mod tests {
     }
 
     fn screen(app: &App) -> String {
-        let mut term = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        screen_at(app, 80, 24)
+    }
+
+    fn screen_at(app: &App, w: u16, h: u16) -> String {
+        let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
         term.draw(|f| draw(f, app)).unwrap();
         term.backend().to_string()
     }
@@ -271,5 +302,44 @@ mod tests {
         let s = screen(&app);
         assert!(s.contains("FINMSG"), "{s}");
         assert!(s.contains("derniere"), "{s}");
+    }
+
+    /// App connectée avec un joueur au centre d'un chunk de plaine.
+    fn app_with_me() -> App {
+        use idk_shared::geo::{Dir, Pos};
+        use idk_shared::protocol::{EntityView, ServerMsg};
+        let mut app = App::for_test(Status::Online);
+        let now = Instant::now();
+        app.state
+            .apply(ServerMsg::Welcome { id: 1, name: "bob".into(), seed: 12_345_678_901_234_567_890 }, now);
+        let look = Look::Player { name: "bob".into(), color: 0 };
+        app.state.apply(
+            ServerMsg::Entities(vec![EntityView {
+                id: 1,
+                pos: Pos { x: 3, y: 4 },
+                facing: Dir::South,
+                look,
+            }]),
+            now,
+        );
+        app
+    }
+
+    #[test]
+    fn small_terminals_keep_me_panel() {
+        let app = app_with_me();
+        for (w, h) in [(80, 24), (60, 18)] {
+            let s = screen_at(&app, w, h);
+            assert!(s.contains("pos"), "{w}x{h}\n{s}");
+            assert!(s.contains("biome"), "{w}x{h}\n{s}");
+            assert!(s.contains("idk"), "{w}x{h}\n{s}");
+        }
+    }
+
+    #[test]
+    fn keys_panel_is_whole_or_hidden() {
+        let app = app_with_me();
+        assert!(screen_at(&app, 120, 40).contains("quit"));
+        assert!(!screen_at(&app, 60, 18).contains("keys"));
     }
 }
