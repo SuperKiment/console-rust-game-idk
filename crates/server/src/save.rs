@@ -12,7 +12,12 @@ use serde::{Deserialize, Serialize};
 use crate::game::{Animal, Game};
 use crate::world::World;
 
-/// Bump on incompatible changes and convert older versions in [`read`].
+/// Version courante du format. Ajouter une version (3 étapes) :
+/// 1. copier la struct `SaveData` actuelle, figée, dans un module `v<N>` (N = ancienne version) ;
+/// 2. incrémenter `SAVE_VERSION` puis modifier `SaveData` ;
+/// 3. ajouter dans [`decode`] le bras `N => v<N>::SaveData décodé puis converti en SaveData`.
+///
+/// `version` doit rester le premier champ de `SaveData` : [`decode`] le lit seul en tête.
 pub const SAVE_VERSION: u32 = 1;
 const FILE: &str = "world.bin";
 
@@ -59,11 +64,17 @@ pub fn read(dir: &Path) -> io::Result<Option<SaveData>> {
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
         r => r?,
     };
-    let data: SaveData = postcard::from_bytes(&bytes).map_err(io::Error::other)?;
-    if data.version != SAVE_VERSION {
-        return Err(io::Error::other(format!("unsupported save version {}", data.version)));
+    decode(&bytes).map(Some)
+}
+
+/// Lit `version` seule (premier champ, varint) avant de décoder le reste : un ancien format
+/// dont la structure diffère n'échoue donc pas au décodage de la struct courante.
+fn decode(bytes: &[u8]) -> io::Result<SaveData> {
+    let (version, _) = postcard::take_from_bytes::<u32>(bytes).map_err(io::Error::other)?;
+    match version {
+        SAVE_VERSION => postcard::from_bytes(bytes).map_err(io::Error::other),
+        v => Err(io::Error::other(format!("unsupported save version {v}"))),
     }
-    Ok(Some(data))
 }
 
 pub fn write(dir: &Path, data: &SaveData) -> io::Result<()> {
@@ -79,4 +90,48 @@ pub fn write(dir: &Path, data: &SaveData) -> io::Result<()> {
     #[cfg(unix)]
     std::fs::File::open(dir)?.sync_all()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample() -> SaveData {
+        SaveData {
+            version: SAVE_VERSION,
+            seed: 42,
+            next_id: 7,
+            players: vec![("bob".into(), Pos::new(1, 2), Dir::North)],
+            chunks: vec![],
+            spawned: vec![],
+            animals: vec![],
+        }
+    }
+
+    #[test]
+    fn roundtrip_current_version() {
+        let dir = std::env::temp_dir().join(format!("idk-save-test-{}", std::process::id()));
+        write(&dir, &sample()).unwrap();
+        let back = read(&dir).unwrap().unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!((back.version, back.seed, back.next_id), (SAVE_VERSION, 42, 7));
+        assert_eq!(back.players.len(), 1);
+    }
+
+    #[test]
+    fn unknown_version_is_reported_before_decoding() {
+        let mut bytes = postcard::to_stdvec(&999u32).unwrap();
+        bytes.extend_from_slice(&[0xff, 0xfe, 0xfd]); // structure différente, non décodable
+        let err = decode(&bytes).err().unwrap();
+        assert_eq!(err.to_string(), "unsupported save version 999");
+    }
+
+    #[test]
+    fn version_is_read_without_decoding_the_rest() {
+        let mut bytes = postcard::to_stdvec(&SAVE_VERSION).unwrap();
+        bytes.extend_from_slice(&[0xff, 0xff, 0xff]);
+        // Version reconnue : l'erreur vient du décodage du reste, pas de la version.
+        let err = decode(&bytes).err().unwrap();
+        assert!(!err.to_string().contains("unsupported save version"));
+    }
 }
