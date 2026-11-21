@@ -59,7 +59,7 @@ pub fn draw(f: &mut Frame, app: &App) {
 
     let me_lines = match s.me() {
         Some(me) => {
-            let facing = me.pos.step(me.facing);
+            let facing = me.pos.step(s.facing());
             let faced = s
                 .entity_at(facing)
                 .map(|e| match &e.look {
@@ -72,7 +72,7 @@ pub fn draw(f: &mut Frame, app: &App) {
                 kv("name", s.name.clone()),
                 kv("pos", format!("{}, {}", me.pos.x, me.pos.y)),
                 kv("biome", s.biome(me.pos).map(|b| b.def().name).unwrap_or("?").to_string()),
-                kv("facing", format!("{faced} ({})", me.facing.name())),
+                kv("facing", format!("{faced} ({})", s.facing().name())),
             ]
         }
         None => vec![Line::styled("not in the world yet", dim)],

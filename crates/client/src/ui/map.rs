@@ -30,7 +30,7 @@ pub fn render(buf: &mut Buffer, area: Rect, state: &GameState, s: &MapStyle, now
     let Some(me) = state.me() else { return };
     let tw = s.glyphs.tile_width();
     let o = origin(area, s.glyphs, me.pos);
-    let facing = me.pos.step(me.facing);
+    let facing = me.pos.step(state.facing());
     let paint = |c: Rgb| s.colors.paint(c);
     let mut sym = [0u8; 8];
 
