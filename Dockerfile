@@ -1,5 +1,6 @@
 # syntax=docker/dockerfile:1
-FROM rust:1-slim AS builder
+# Même distribution (bookworm) que le runtime : évite un binaire lié à une glibc plus récente.
+FROM rust:1-slim-bookworm AS builder
 WORKDIR /src
 COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry \

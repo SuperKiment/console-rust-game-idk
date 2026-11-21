@@ -20,3 +20,13 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Le second build réutilise l'étape builder du premier (cache local du job).
+      - run: docker build --target server -t idk-server .
+      - run: docker build --target client -t idk-client .
+      - run: docker run --rm idk-server --help
+      - run: docker run --rm idk-client --help

@@ -193,7 +193,7 @@ fn draw_bar(f: &mut Frame, app: &App, area: Rect) {
         },
     };
     if typing && mid.width > 0 {
-        f.set_cursor_position(Position::new(mid.x + middle.chars().count() as u16, mid.y));
+        f.set_cursor_position(Position::new(mid.x + Line::from(middle.as_str()).width() as u16, mid.y));
     }
     f.render_widget(Paragraph::new(middle).style(bar), mid);
 }
@@ -204,8 +204,17 @@ fn users(n: usize) -> String {
 
 /// Vim-style command line showing the end of `text`, leaving one cell for the cursor.
 fn command_line(text: &str, width: usize) -> String {
-    let skip = text.chars().count().saturating_sub(width.saturating_sub(2));
-    format!(":{}", text.chars().skip(skip).collect::<String>())
+    let budget = width.saturating_sub(2);
+    let mut used = 0;
+    let mut tail: Vec<char> = Vec::new();
+    for c in text.chars().rev() {
+        used += Line::from(c.to_string()).width();
+        if used > budget {
+            break;
+        }
+        tail.push(c);
+    }
+    format!(":{}", tail.iter().rev().collect::<String>())
 }
 
 /// Connection state, shown in the status bar instead of a popup.
@@ -271,5 +280,13 @@ mod tests {
         assert_eq!(command_line("hi", 20), ":hi");
         assert_eq!(command_line("abcdefgh", 6), ":efgh");
         assert_eq!(command_line("x", 0), ":");
+    }
+
+    #[test]
+    fn command_line_counts_display_width() {
+        // caractères de 2 cellules : largeur 5 = \":\" + curseur + 3 cellules, donc un seul tient
+        assert_eq!(command_line("日本語", 5), ":語");
+        assert_eq!(command_line("日本語", 8), ":日本語");
+        assert_eq!(Line::from(command_line("a日本語", 6)).width(), 5);
     }
 }

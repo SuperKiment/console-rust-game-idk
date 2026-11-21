@@ -211,20 +211,31 @@ fn draw_status(f: &mut Frame, app: &App, t: &Theme, area: Rect) {
         Status::Offline(reason) => ("offline", format!("{frame} {reason}\nretrying…")),
         Status::Rejected(reason) => ("rejected", format!("{reason}\npress esc to quit")),
     };
-    let w = (msg.lines().map(|l| l.chars().count()).max().unwrap_or(0) as u16 + 6).min(area.width);
-    let h = (msg.lines().count() as u16 + 2).min(area.height);
+    let w = (msg.lines().map(|l| Line::from(l).width()).max().unwrap_or(0) as u16 + 6).min(area.width);
+    let text = Paragraph::new(msg).alignment(Alignment::Center).wrap(Wrap { trim: true });
+    // Hauteur après retour à la ligne (bordures : 2 colonnes et 2 lignes)
+    let h = (text.line_count(w.saturating_sub(2)) as u16 + 2).min(area.height);
     let popup = Rect::new(area.x + (area.width - w) / 2, area.y + (area.height - h) / 2, w, h);
     f.render_widget(Clear, popup);
     let block = Block::bordered()
         .border_type(BorderType::Rounded)
         .border_style(Style::new().fg(paint(t.accent)))
         .title(Span::styled(format!(" {title} "), Style::new().fg(paint(t.title)).bold()));
-    f.render_widget(
-        Paragraph::new(msg)
-            .alignment(Alignment::Center)
-            .wrap(Wrap { trim: true })
-            .block(block)
-            .fg(paint(t.text)),
-        popup,
-    );
+    f.render_widget(text.block(block).fg(paint(t.text)), popup);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+
+    #[test]
+    fn long_status_reason_keeps_last_line() {
+        let app = App::for_test(Status::Offline("x".repeat(200)));
+        let mut term = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        term.draw(|f| draw_status(f, &app, &NORMAL, f.area())).unwrap();
+        let screen = term.backend().to_string();
+        assert!(screen.contains("retrying"), "{screen}");
+    }
 }

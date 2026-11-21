@@ -21,6 +21,8 @@ const MOVE_COOLDOWN: Duration = Duration::from_millis(90);
 pub const VIEW_TILES: i32 = VIEW_CHUNKS * CHUNK_SIZE;
 const MAX_CHAT: usize = 240;
 const MAX_NAME: usize = 16;
+/// Rayon maximal (en tuiles) de la recherche d'une tuile praticable à la connexion.
+const MAX_SPAWN_SEARCH: i32 = 32;
 
 /// What the network layer reports to the game.
 pub enum Event {
@@ -107,6 +109,8 @@ impl Game {
         let name = self.unique_name(raw_name);
         let (pos, facing) =
             self.offline.remove(&name).unwrap_or_else(|| (self.world.spawn_point(), Dir::South));
+        // Le monde a pu changer depuis (mur posé sur la position ou sur le point d'apparition).
+        let pos = self.nearest_walkable(pos);
         let id = self.alloc_id();
         let _ = tx.send(ServerMsg::Welcome { id, name: name.clone(), seed: self.world.seed });
         let color = player_color_index(&name);
@@ -126,6 +130,24 @@ impl Game {
         self.broadcast_log(LogKind::System, format!("{name} joined the world."));
         self.broadcast_online();
         self.stream_chunks(conn, now);
+    }
+
+    /// `pos` si la tuile est praticable dans le monde courant, sinon la plus proche (anneaux carrés croissants).
+    fn nearest_walkable(&mut self, pos: Pos) -> Pos {
+        for r in 0..=MAX_SPAWN_SEARCH {
+            for dy in -r..=r {
+                for dx in -r..=r {
+                    if dx.abs().max(dy.abs()) != r {
+                        continue;
+                    }
+                    let p = Pos::new(pos.x + dx, pos.y + dy);
+                    if self.world.tile(p).def().walkable {
+                        return p;
+                    }
+                }
+            }
+        }
+        pos
     }
 
     fn leave(&mut self, conn: ConnId) {
@@ -345,5 +367,42 @@ impl Game {
             });
             let _ = p.tx.send(ServerMsg::Entities(players.chain(animals).collect()));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn join(g: &mut Game, conn: ConnId, name: &str, now: Instant) {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        g.event(Event::Join { conn, name: name.into(), tx }, now);
+    }
+
+    #[test]
+    fn walled_offline_player_reappears_on_walkable_tile() {
+        let now = Instant::now();
+        let mut g = Game::new(World::new(5));
+        join(&mut g, 1, "alice", now);
+        let pos = g.players[&1].pos;
+        g.event(Event::Leave(1), now);
+        g.world.set_tile(pos, Tile::BUILT);
+        join(&mut g, 2, "alice", now);
+        let back = g.players[&2].pos;
+        assert_ne!(back, pos);
+        assert!(g.world.tile(back).def().walkable);
+        assert!((back.x - pos.x).abs() <= 1 && (back.y - pos.y).abs() <= 1);
+    }
+
+    #[test]
+    fn walled_spawn_does_not_trap_new_player() {
+        let now = Instant::now();
+        let mut g = Game::new(World::new(5));
+        let spawn = g.world.spawn_point();
+        g.world.set_tile(spawn, Tile::BUILT);
+        join(&mut g, 1, "bob", now);
+        let pos = g.players[&1].pos;
+        assert_ne!(pos, spawn);
+        assert!(g.world.tile(pos).def().walkable);
     }
 }

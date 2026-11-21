@@ -6,7 +6,7 @@ use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Color, Style};
 use ratatui::symbols::border;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Paragraph};
+use ratatui::widgets::{Block, BorderType, Paragraph, Wrap};
 
 use super::theme::NORMAL;
 use crate::config::{ColorDepth, GlyphSet};
@@ -137,7 +137,7 @@ pub fn draw(f: &mut Frame, w: &Wizard) {
             lines.push(Line::styled("Enter: save", accent));
         }
     }
-    f.render_widget(Paragraph::new(lines), body);
+    f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), body);
 
     let back = if w.step == Step::Unicode { "" } else { "   Backspace: back" };
     f.render_widget(
