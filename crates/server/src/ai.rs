@@ -9,8 +9,9 @@ use idk_shared::protocol::{EntityId, LogKind};
 use crate::game::{ConnId, Game, VIEW_TILES};
 
 /// Animals farther than this from every player are frozen. Equal to the streaming radius (96 tiles),
-/// already 2 to 5 times what a 120x40 terminal shows (±44 tiles wide, ±19 high): simulating farther
-/// would only animate animals in chunks no client holds.
+/// already about 2 times the width and 6 times the height a 120x40 terminal shows (±43 to ±58 tiles
+/// wide, ±14 to ±15 high depending on the layout): simulating farther would only animate animals in
+/// chunks no client holds.
 const ACTIVE_RADIUS: i32 = VIEW_TILES;
 /// A follower farther than this from its owner catches up instantly.
 const TELEPORT_DIST: i32 = 40;

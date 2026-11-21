@@ -100,7 +100,7 @@ pub struct LogLine {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum LogKind {
-    /// Server notices (joins, leaves, saves).
+    /// Server notices (joins, leaves); the client also uses it for its own connection notices.
     System,
     /// Result of the player's own actions.
     Info,
