@@ -14,7 +14,7 @@ use super::pick;
 use super::theme::INCOGNITO;
 use crate::app::{App, Mode, Status};
 use crate::config::GlyphSet;
-use crate::state::unix_now;
+use crate::state::{shifted, unix_now, utc_offset};
 
 /// Log pane height including its header row.
 const LOG_HEIGHT: u16 = 8;
@@ -104,7 +104,7 @@ fn draw_log(f: &mut Frame, app: &App, area: Rect) {
                 Level::Warn => Style::new().fg(paint(t.text)).add_modifier(Modifier::BOLD),
             };
             Line::from(vec![
-                Span::styled(format!("{} ", iso_time(e.time)), Style::new().fg(paint(t.dim))),
+                Span::styled(format!("{} ", iso_time(e.time, utc_offset())), Style::new().fg(paint(t.dim))),
                 Span::styled(format!("{} ", level.label()), level_style),
                 Span::styled(message(&e.line), Style::new().fg(paint(t.text))),
             ])
@@ -152,10 +152,17 @@ fn message(line: &LogLine) -> String {
     }
 }
 
-/// `YYYY-MM-DDTHH:MM:SSZ` from seconds since the Unix epoch.
-fn iso_time(secs: u64) -> String {
+/// `YYYY-MM-DDTHH:MM:SS` + `Z` ou `±HH:MM`, en heure locale (`offset` = local − UTC, secondes).
+fn iso_time(unix: u64, offset: i64) -> String {
+    let secs = shifted(unix, offset);
     let (y, m, d) = civil_from_days((secs / 86_400) as i64);
-    format!("{y:04}-{m:02}-{d:02}T{}Z", super::clock(secs % 86_400))
+    let zone = if offset == 0 {
+        "Z".to_string()
+    } else {
+        let sign = if offset < 0 { '-' } else { '+' };
+        format!("{sign}{:02}:{:02}", offset.abs() / 3600, offset.abs() / 60 % 60)
+    };
+    format!("{y:04}-{m:02}-{d:02}T{}{zone}", super::clock(secs % 86_400))
 }
 
 /// Gregorian date of a day count since 1970-01-01 (Howard Hinnant's algorithm).
@@ -181,7 +188,7 @@ fn draw_bar(f: &mut Frame, app: &App, area: Rect) {
         " {} {} {} ",
         users(app.state.online.len()),
         pick(app.config.glyphs, "·", "|"),
-        &super::clock(unix_now() % 86_400)[..5]
+        &super::clock(shifted(unix_now(), utc_offset()) % 86_400)[..5]
     );
     let [mode_area, mid, right_area] = Layout::horizontal([
         Constraint::Length(mode.len() as u16),
@@ -239,14 +246,18 @@ mod tests {
 
     #[test]
     fn iso_dates() {
-        assert_eq!(iso_time(0), "1970-01-01T00:00:00Z");
-        assert_eq!(iso_time(951_782_400), "2000-02-29T00:00:00Z");
-        assert_eq!(iso_time(ISO_REF), "2026-11-20T10:01:28Z");
+        assert_eq!(iso_time(0, 0), "1970-01-01T00:00:00Z");
+        assert_eq!(iso_time(951_782_400, 0), "2000-02-29T00:00:00Z");
+        assert_eq!(iso_time(ISO_REF, 0), "2026-11-20T10:01:28Z");
+        // Heure locale : Paris en hiver (+1 h), et passage de minuit vers le jour précédent.
+        assert_eq!(iso_time(ISO_REF, 3600), "2026-11-20T11:01:28+01:00");
+        assert_eq!(iso_time(951_782_400, -3600), "2000-02-28T23:00:00-01:00");
+        assert_eq!(iso_time(ISO_REF, -5 * 3600 - 1800), "2026-11-20T04:31:28-05:30");
     }
 
     /// e.g. `2026-11-20T10:01:28Z INFO  alice joined the world.`
     fn log_text(e: &LogEntry) -> String {
-        format!("{} {} {}", iso_time(e.time), level(&e.line).label(), message(&e.line))
+        format!("{} {} {}", iso_time(e.time, 0), level(&e.line).label(), message(&e.line))
     }
 
     const ISO_REF: u64 = 1_795_168_888;

@@ -1,6 +1,7 @@
 //! What the client knows about the world, rebuilt from server messages.
 
 use std::collections::{HashMap, VecDeque};
+use std::sync::OnceLock;
 use std::time::{Duration, Instant, SystemTime};
 
 use idk_shared::content::{Biome, Effect, Tile};
@@ -19,6 +20,18 @@ pub struct LogEntry {
 
 pub fn unix_now() -> u64 {
     SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+/// Décalage local − UTC en secondes, lu une seule fois (un changement d'heure en cours de partie
+/// n'est pas suivi). Fuseau de la machine : `TZ` ou `/etc/localtime` (monté par docker compose).
+pub fn utc_offset() -> i64 {
+    static OFFSET: OnceLock<i64> = OnceLock::new();
+    *OFFSET.get_or_init(|| chrono::Local::now().offset().local_minus_utc() as i64)
+}
+
+/// Secondes Unix décalées de `offset` : à passer à `ui::clock` pour l'heure locale.
+pub fn shifted(unix: u64, offset: i64) -> u64 {
+    unix.saturating_add_signed(offset)
 }
 
 #[derive(Default)]
