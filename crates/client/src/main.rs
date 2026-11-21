@@ -7,6 +7,7 @@ mod state;
 mod ui;
 
 use clap::Parser;
+use crossterm::event::{DisableBracketedPaste, EnableBracketedPaste};
 
 #[derive(Parser)]
 #[command(about = "idk game client")]
@@ -30,8 +31,11 @@ async fn main() -> std::io::Result<()> {
     let args = Args::parse();
     let saved = config::load();
     let mut terminal = ratatui::init();
+    // Sans ça, un collage arrive comme des frappes (et ses retours à la ligne comme des commandes).
+    let _ = crossterm::execute!(std::io::stdout(), EnableBracketedPaste);
     let mut save_warning = None;
     let result = start(&mut terminal, args, saved, &mut save_warning).await;
+    let _ = crossterm::execute!(std::io::stdout(), DisableBracketedPaste);
     ratatui::restore();
     // Affiché après la restauration : en mode TUI (écran alternatif) il serait perdu.
     if let Some(w) = save_warning {

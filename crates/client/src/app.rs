@@ -9,7 +9,7 @@ use ratatui::DefaultTerminal;
 use tokio::sync::mpsc::{self, UnboundedSender};
 
 use crate::config::Config;
-use crate::input::{Action, action_for};
+use crate::input::{Action, action_for, has_modifier, push_pasted};
 use crate::net::{self, NetEvent};
 use crate::state::GameState;
 
@@ -110,8 +110,25 @@ impl App {
     }
 
     fn on_terminal(&mut self, ev: Event) {
-        let Event::Key(key) = ev else { return };
+        let key = match ev {
+            Event::Key(key) => key,
+            // Collage (bracketed paste) : du texte, jamais des commandes.
+            Event::Paste(s) => {
+                if let Mode::Chat(text) = &mut self.mode {
+                    push_pasted(text, &s, MAX_CHAT);
+                }
+                return;
+            }
+            _ => return,
+        };
         if key.kind == KeyEventKind::Release {
+            return;
+        }
+        // Ctrl+C quitte aussi en chat ; les autres Ctrl/Alt/Super + touche sont ignorés.
+        if matches!(self.mode, Mode::Chat(_)) && has_modifier(key) {
+            if action_for(key) == Some(Action::Quit) {
+                self.quit = true;
+            }
             return;
         }
         match &mut self.mode {
@@ -167,6 +184,7 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crossterm::event::KeyModifiers;
     use idk_shared::geo::Dir;
 
     #[test]
@@ -176,6 +194,43 @@ mod tests {
         app.on_net(NetEvent::Rejected("name taken".into()));
         assert!(matches!(app.mode, Mode::Play));
         assert!(matches!(app.status, Status::Rejected(_)));
+    }
+
+    fn chat_app(text: &str) -> App {
+        let mut app = App::for_test(Status::Online);
+        app.mode = Mode::Chat(text.into());
+        app
+    }
+
+    fn chat_text(app: &App) -> &str {
+        let Mode::Chat(t) = &app.mode else { panic!("not in chat") };
+        t
+    }
+
+    #[test]
+    fn chat_ctrl_j_adds_nothing_and_ctrl_c_quits() {
+        let mut app = chat_app("a");
+        app.on_terminal(Event::Key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::CONTROL)));
+        assert_eq!(chat_text(&app), "a");
+        assert!(!app.quit);
+        app.on_terminal(Event::Key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)));
+        assert!(app.quit);
+    }
+
+    #[test]
+    fn chat_paste_is_one_line_and_not_sent() {
+        let mut app = chat_app("");
+        app.on_terminal(Event::Paste("hello\nxbbbq".into()));
+        assert_eq!(chat_text(&app), "hello xbbbq");
+        assert!(app.sent.try_recv().is_err());
+    }
+
+    #[test]
+    fn play_paste_does_nothing() {
+        let mut app = App::for_test(Status::Online);
+        app.on_terminal(Event::Paste("hello\nxbbbq".into()));
+        assert!(matches!(app.mode, Mode::Play));
+        assert!(app.sent.try_recv().is_err());
     }
 
     #[test]

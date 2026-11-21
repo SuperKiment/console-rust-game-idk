@@ -44,9 +44,34 @@ pub const BINDINGS: &[Binding] = &[
     Binding { keys: &[Esc], action: Action::Quit, help: Some(("esc ctrl-c", "quit")) },
 ];
 
+/// Ctrl/Alt/Super + touche : jamais du texte ni une action de jeu (sauf Ctrl+C, géré à part).
+/// Exception : Ctrl+Alt+caractère = AltGr sous Windows (`@`, `#`, `[` en AZERTY), c'est du texte.
+pub fn has_modifier(key: KeyEvent) -> bool {
+    let altgr = KeyModifiers::CONTROL | KeyModifiers::ALT;
+    if matches!(key.code, KeyCode::Char(_)) && key.modifiers.contains(altgr) {
+        return false;
+    }
+    key.modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER)
+}
+
+/// Ajoute un texte collé à `text` : retours à la ligne remplacés par des espaces, borné à `max` caractères.
+pub fn push_pasted(text: &mut String, pasted: &str, max: usize) {
+    let room = max.saturating_sub(text.chars().count());
+    text.extend(
+        pasted
+            .chars()
+            .map(|c| if matches!(c, '\r' | '\n') { ' ' } else { c })
+            .filter(|c| !c.is_control())
+            .take(room),
+    );
+}
+
 pub fn action_for(key: KeyEvent) -> Option<Action> {
-    if key.modifiers.contains(KeyModifiers::CONTROL) {
-        return (key.code == Char('c')).then_some(Action::Quit);
+    if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == Char('c') {
+        return Some(Action::Quit);
+    }
+    if has_modifier(key) {
+        return None;
     }
     let code = match key.code {
         Char(c) => Char(c.to_ascii_lowercase()),
@@ -74,5 +99,25 @@ mod tests {
         assert_eq!(action_for(key('W')), Some(Action::Move(Dir::North)));
         assert_eq!(action_for(key('q')), Some(Action::Move(Dir::West)));
         assert_eq!(action_for(KeyEvent::new(Char('c'), KeyModifiers::CONTROL)), Some(Action::Quit));
+    }
+
+    #[test]
+    fn altgr_chars_are_text() {
+        let altgr = KeyEvent::new(KeyCode::Char('@'), KeyModifiers::CONTROL | KeyModifiers::ALT);
+        assert!(!has_modifier(altgr));
+    }
+
+    #[test]
+    fn alt_and_super_keys_are_ignored() {
+        assert_eq!(action_for(KeyEvent::new(Char('x'), KeyModifiers::ALT)), None);
+        assert_eq!(action_for(KeyEvent::new(Char('b'), KeyModifiers::SUPER)), None);
+        assert_eq!(action_for(KeyEvent::new(Char('j'), KeyModifiers::CONTROL)), None);
+    }
+
+    #[test]
+    fn paste_flattens_lines_and_truncates() {
+        let mut t = String::from("ab");
+        push_pasted(&mut t, "x\r\ny\nz", 6);
+        assert_eq!(t, "abx  y");
     }
 }
