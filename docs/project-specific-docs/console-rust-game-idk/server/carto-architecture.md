@@ -141,7 +141,7 @@ Priorité de décision dans `act` : animal apprivoisé trop loin (plus de `TELEP
 
 | Champ de `SaveData` | Contenu |
 |---|---|
-| `version` | `SAVE_VERSION` (1) ; une version différente fait échouer le chargement (`read` renvoie une erreur, aucune conversion n'existe encore) |
+| `version` | `SAVE_VERSION` (1) ; lue seule en tête de fichier ; version inconnue (ex. future) : erreur « unsupported save version N » |
 | `seed`, `next_id` | graine du monde, prochain identifiant d'entité |
 | `players` | `(nom, position, direction)` des joueurs connectés et hors ligne ; à la reconnexion sous le même nom, le joueur reprend sa position (`Game.offline`) |
 | `chunks` | chunks modifiés uniquement |
@@ -150,8 +150,13 @@ Priorité de décision dans `act` : animal apprivoisé trop loin (plus de `TELEP
 
 Déclencheurs (`crates/server/src/lib.rs`) : toutes les 60 s (`AUTOSAVE`), et à l'arrêt sur ctrl-c ou SIGTERM (`shutdown_signal` dans `main.rs`). Une erreur d'écriture est journalisée sans arrêter le serveur. Au démarrage : sauvegarde existante (graine ignorée) sinon nouveau monde avec `--seed` ou une graine tirée de l'horloge.
 
+Chargement : `save::decode` lit d'abord `version` seule (`postcard::take_from_bytes::<u32>`, premier champ de `SaveData`, varint), puis dispatche par `match`. Aujourd'hui un seul bras (`SAVE_VERSION` => décode `SaveData`) : pas de copie figée tant qu'une seule version existe.
+
 > [!WARNING]
-> Un changement incompatible du format de sauvegarde doit incrémenter `SAVE_VERSION` et ajouter la conversion dans `save::read` (voir `docs/CLAUDE.md`, section « Git, branches et migrations »). Attention : `read` désérialise toute la `SaveData` avant de tester `version`, donc un ancien fichier dont la structure diffère échoue au décodage avant la vérification.
+> Un changement incompatible du format doit ajouter une version (`version` doit rester le premier champ) :
+> 1. copier la struct `SaveData` actuelle, figée, dans un module `save::v<N>` (N = ancienne version) ;
+> 2. incrémenter `SAVE_VERSION` puis modifier `SaveData` ;
+> 3. ajouter dans `decode` le bras `N =>` : décoder `v<N>::SaveData` puis convertir vers `SaveData`.
 
 ## Docs liées
 
