@@ -204,17 +204,7 @@ fn users(n: usize) -> String {
 
 /// Vim-style command line showing the end of `text`, leaving one cell for the cursor.
 fn command_line(text: &str, width: usize) -> String {
-    let budget = width.saturating_sub(2);
-    let mut used = 0;
-    let mut tail: Vec<char> = Vec::new();
-    for c in text.chars().rev() {
-        used += Line::from(c.to_string()).width();
-        if used > budget {
-            break;
-        }
-        tail.push(c);
-    }
-    format!(":{}", tail.iter().rev().collect::<String>())
+    format!(":{}", super::tail_fit(text, width.saturating_sub(2)))
 }
 
 /// Connection state, shown in the status bar instead of a popup.
