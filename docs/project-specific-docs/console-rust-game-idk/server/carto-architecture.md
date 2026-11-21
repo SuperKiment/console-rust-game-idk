@@ -5,11 +5,11 @@
 | 31-53 | Boucle de jeu |
 | 54-64 | — Tick (20 Hz) |
 | 65-70 | — Actions des joueurs |
-| 71-96 | Monde par chunks |
-| 97-103 | — Streaming de chunks |
-| 104-118 | IA des animaux (paramétrique) |
-| 119-136 | Sauvegarde |
-| 137-141 | Docs liées |
+| 71-97 | Monde par chunks |
+| 98-104 | — Streaming de chunks |
+| 105-119 | IA des animaux (paramétrique) |
+| 120-137 | Sauvegarde |
+| 138-142 | Docs liées |
 # Serveur : architecture
 
 > Vérifié le 2026-11-20 depuis `crates/server/src/` (`lib.rs`, `main.rs`, `net.rs`, `game.rs`, `ai.rs`, `save.rs`, `rng.rs`, `world/`). Fiche : [vue-ensemble.md](vue-ensemble.md).
@@ -93,6 +93,7 @@ flowchart TD
 - **`spawned`** : ensemble des chunks dont les animaux ont déjà été créés. Il survit aux redémarrages et évite les doublons : un chunk régénéré après redémarrage n'a plus de `pending_spawns`.
 - **`modified`** : un chunk dont une tuile a changé (`set_tile`) est sauvegardé en entier ; les autres sont régénérés au chargement.
 - **Point d'apparition** (`spawn_point`) : anneaux carrés autour de (0, 0), échantillonnés toutes les 8 tuiles, d'abord dans `Plains` ou `Meadow`, sinon n'importe quelle terre praticable. Calculé une fois (`OnceCell`).
+- **Connexion** (`Game::join`, `crates/server/src/game.rs`) : la position de départ (sauvegardée si le joueur était hors ligne, sinon `spawn_point`) est lue dans le monde modifié. Si la tuile n'est plus praticable (mur posé entre-temps), `nearest_walkable` prend la tuile praticable la plus proche (anneaux carrés, rayon max 32). `build` ne protège donc que les joueurs en ligne.
 
 ### Streaming de chunks
 
