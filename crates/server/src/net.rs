@@ -8,9 +8,11 @@ use idk_shared::protocol::{ClientMsg, PROTOCOL_VERSION, ServerMsg};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::{self, UnboundedSender};
 
-use crate::game::Event;
+use crate::game::{Event, SEND_QUEUE};
 
 const HELLO_TIMEOUT: Duration = Duration::from_secs(10);
+/// Sans aucun message du client pendant ce délai, la session est fermée (le client envoie un `Ping` toutes les 5 s).
+const READ_TIMEOUT: Duration = Duration::from_secs(15);
 
 pub async fn accept_loop(listener: TcpListener, events: UnboundedSender<Event>) {
     static NEXT: AtomicU64 = AtomicU64::new(1);
@@ -42,22 +44,34 @@ async fn handle(stream: TcpStream, conn: u64, events: UnboundedSender<Event>) {
         _ => return,
     };
 
-    let (tx, mut rx) = mpsc::unbounded_channel::<ServerMsg>();
+    let (tx, mut rx) = mpsc::channel::<ServerMsg>(SEND_QUEUE);
     if events.send(Event::Join { conn, name, tx }).is_err() {
         return;
     }
-    let writer_task = tokio::spawn(async move {
+    let mut writer_task = tokio::spawn(async move {
+        // Se termine si l'écriture échoue, ou quand le jeu lâche le `tx` (remplacement, file pleine, départ).
         while let Some(msg) = rx.recv().await {
             if writer.send(&msg).await.is_err() {
                 break;
             }
         }
     });
-    while let Ok(Some(msg)) = reader.recv::<ClientMsg>().await {
-        if events.send(Event::Msg(conn, msg)).is_err() {
-            break;
+    // La fin de l'écriture ferme aussi la lecture (et inversement) : pas de tâche ni de socket qui fuit.
+    loop {
+        tokio::select! {
+            _ = &mut writer_task => break,
+            msg = tokio::time::timeout(READ_TIMEOUT, reader.recv::<ClientMsg>()) => match msg {
+                Ok(Ok(Some(msg))) => {
+                    if events.send(Event::Msg(conn, msg)).is_err() {
+                        break;
+                    }
+                }
+                // Fermeture, erreur de lecture ou délai dépassé.
+                _ => break,
+            },
         }
     }
+    // `Leave` ne retire que la session de cette `conn` : sans effet si elle a été remplacée entre-temps.
     let _ = events.send(Event::Leave(conn));
     writer_task.abort();
 }

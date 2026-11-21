@@ -4,13 +4,13 @@
 | 18-34 | Modules |
 | 35-51 | Démarrage |
 | 52-65 | Boucle principale |
-| 66-85 | Connexion et reconnexion |
-| 86-100 | GameState |
-| 101-114 | Layouts |
-| 115-133 | Chaîne glyphes et couleurs |
-| 134-154 | Assistant de configuration |
-| 155-160 | Table BINDINGS |
-| 161-165 | Docs liées |
+| 66-87 | Connexion et reconnexion |
+| 88-102 | GameState |
+| 103-116 | Layouts |
+| 117-135 | Chaîne glyphes et couleurs |
+| 136-156 | Assistant de configuration |
+| 157-162 | Table BINDINGS |
+| 163-167 | Docs liées |
 # Client : architecture
 
 > Vérifié le 2026-11-20 depuis `crates/client/src/` (`main.rs`, `app.rs`, `net.rs`, `state.rs`, `input.rs`, `config.rs`, `setup.rs`, `ui/`). Fiche : [vue-ensemble.md](vue-ensemble.md).
@@ -65,19 +65,21 @@ Modes de saisie : `Mode::Play` (touches via `BINDINGS`) et `Mode::Chat(String)` 
 
 ## Connexion et reconnexion
 
-`crates/client/src/net.rs` : une tâche en boucle. Chaque `session` ouvre le socket, envoie `Hello`, puis `select` entre lecture serveur et commandes sortantes.
+`crates/client/src/net.rs` : une tâche en boucle. Chaque `session` ouvre le socket, envoie `Hello`, puis `select` entre lecture serveur, commandes sortantes, `Ping` périodique et échéance de silence.
 
 ```mermaid
 stateDiagram-v2
     [*] --> Connecting
     Connecting --> Online : premier ServerMsg reçu
-    Connecting --> Offline : échec de connexion
-    Online --> Offline : socket fermé ou erreur
+    Connecting --> Offline : échec ou timeout de connect (5 s)
+    Online --> Offline : socket fermé, erreur, ou 5 s sans message serveur
     Offline --> Connecting : pause de 2 s
     Connecting --> Rejected : Rejected du serveur ou adresse mal formée
     Rejected --> [*] : plus de nouvel essai, Échap quitte
 ```
 
+- Keepalive : `ClientMsg::Ping` toutes les 5 s (`PING_EVERY`), sinon le serveur ferme la session après 15 s de silence. Détection d'un serveur gelé ou d'une coupure sans fermeture TCP : si aucun message serveur n'arrive pendant 5 s (`SILENCE`, le serveur émet `Entities` à 20 Hz), la session échoue (`Disconnected: no data from server for 5 s`) et la reconnexion démarre. L'échéance n'est repoussée que par les messages du serveur, pas par les touches du joueur. `connect` a un timeout de 5 s (`CONNECT_TIMEOUT`).
+- Reconnexion sous le même nom : le serveur remplace l'éventuelle session fantôme et rend la position, l'orientation et les animaux apprivoisés. Si c'est cette session-ci qui est remplacée (autre client avec le même nom), elle reçoit `Rejected("replaced by new connection")` : statut `Rejected`, pas de nouvel essai, donc pas de vol de session en boucle.
 - Les touches envoyées pendant la coupure sont vidées avant de se reconnecter (`while out.try_recv().is_ok()`).
 - À `Disconnected`, `GameState.me` et `online` sont remis à vide ; la carte devient vide (`map::render` ne dessine rien sans `me`) sous le popup de statut. À `Welcome`, tout l'état est remplacé sauf le journal.
 - Le statut passe à `Online` dès le premier message, `Welcome` inclus.
