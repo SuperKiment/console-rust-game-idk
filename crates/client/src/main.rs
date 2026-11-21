@@ -28,10 +28,15 @@ struct Args {
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
     let args = Args::parse();
-    let saved = config::load()?;
+    let saved = config::load();
     let mut terminal = ratatui::init();
-    let result = start(&mut terminal, args, saved).await;
+    let mut save_warning = None;
+    let result = start(&mut terminal, args, saved, &mut save_warning).await;
     ratatui::restore();
+    // Affiché après la restauration : en mode TUI (écran alternatif) il serait perdu.
+    if let Some(w) = save_warning {
+        eprintln!("{w}");
+    }
     result
 }
 
@@ -39,13 +44,17 @@ async fn start(
     terminal: &mut ratatui::DefaultTerminal,
     args: Args,
     saved: Option<config::Config>,
+    save_warning: &mut Option<String>,
 ) -> std::io::Result<()> {
     let mut config = match saved {
         Some(c) if !args.configure => c,
         base => {
             // First launch or `--configure`: ask, then save. Cancelling quits without saving.
             let Some(c) = setup::run(terminal, base.unwrap_or_default())? else { return Ok(()) };
-            config::save(&c)?;
+            // Échec (ex. volume en lecture seule) : on joue quand même avec la config en mémoire.
+            if let Err(e) = config::save(&c) {
+                *save_warning = Some(format!("Config not saved ({}): {e}", config::path().display()));
+            }
             c
         }
     };
