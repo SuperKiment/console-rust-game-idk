@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use idk_shared::content::{Effect, Species, Tile, player_color_index};
 use idk_shared::geo::{CHUNK_SIZE, ChunkPos, Dir, Pos};
 use idk_shared::protocol::{
-    ClientMsg, EntityId, EntityView, KEEP_CHUNKS, LogKind, LogLine, Look, ServerMsg, VIEW_CHUNKS,
+    ClientMsg, EntityId, EntityView, KEEP_CHUNKS, LogKind, LogLine, Look, MAX_NAME, ServerMsg, VIEW_CHUNKS,
 };
 use tokio::sync::mpsc::Sender;
 use tokio::sync::mpsc::error::TrySendError;
@@ -22,7 +22,6 @@ pub const TICK: Duration = Duration::from_millis(50);
 const MOVE_COOLDOWN: Duration = Duration::from_millis(90);
 pub const VIEW_TILES: i32 = VIEW_CHUNKS * CHUNK_SIZE;
 const MAX_CHAT: usize = 240;
-const MAX_NAME: usize = 16;
 /// Taille de la file d'envoi par client (messages). Pleine = client trop lent ou gelé : déconnecté.
 pub const SEND_QUEUE: usize = 256;
 /// Rayon maximal (en tuiles) de la recherche d'une tuile praticable à la connexion.

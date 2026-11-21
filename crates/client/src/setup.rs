@@ -6,12 +6,12 @@
 use std::io;
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use idk_shared::protocol::MAX_NAME;
 use ratatui::DefaultTerminal;
 
 use crate::config::{ColorDepth, Config, GlyphSet};
 
-/// Longest accepted name / server address.
-const MAX_NAME: usize = 24;
+/// Longest accepted server address (the name limit is shared with the server).
 const MAX_SERVER: usize = 64;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -216,6 +216,11 @@ pub fn run(terminal: &mut DefaultTerminal, base: Config) -> io::Result<Option<Co
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn name_limit_matches_server() {
+        assert_eq!(super::MAX_NAME, 16);
+    }
+
     use super::*;
 
     fn press(w: &mut Wizard, keys: &str) {

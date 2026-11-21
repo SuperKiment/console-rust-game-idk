@@ -234,7 +234,7 @@ mod tests {
     use crate::state::LogEntry;
 
     fn entry(time: u64, kind: LogKind, text: &str) -> LogEntry {
-        LogEntry { time, line: LogLine::new(kind, text) }
+        LogEntry { time, line: LogLine::new(kind, text), color: 0 }
     }
 
     #[test]

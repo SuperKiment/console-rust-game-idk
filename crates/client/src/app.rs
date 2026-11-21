@@ -2,7 +2,7 @@
 
 use std::time::{Duration, Instant};
 
-use crossterm::event::{Event, EventStream, KeyCode, KeyEvent, KeyEventKind};
+use crossterm::event::{Event, EventStream, KeyCode, KeyEventKind};
 use futures::StreamExt;
 use idk_shared::protocol::{ClientMsg, LogKind, LogLine};
 use ratatui::DefaultTerminal;
@@ -15,6 +15,8 @@ use crate::state::GameState;
 
 const FRAME: Duration = Duration::from_millis(33);
 const MAX_CHAT: usize = 240;
+/// Délai max entre deux Esc pour confirmer la sortie.
+const QUIT_CONFIRM: Duration = Duration::from_secs(2);
 
 pub enum Mode {
     Play,
@@ -39,6 +41,8 @@ pub struct App {
     #[cfg(test)]
     sent: mpsc::UnboundedReceiver<ClientMsg>,
     quit: bool,
+    /// Instant du premier Esc en jeu, en attente de confirmation.
+    quit_armed: Option<Instant>,
 }
 
 impl App {
@@ -55,6 +59,7 @@ impl App {
             net,
             sent,
             quit: false,
+            quit_armed: None,
         }
     }
 }
@@ -73,6 +78,7 @@ pub async fn run(terminal: &mut DefaultTerminal, config: Config) -> std::io::Res
         #[cfg(test)]
         sent: mpsc::unbounded_channel().1,
         quit: false,
+        quit_armed: None,
     };
     let mut input = EventStream::new();
     let mut frame = tokio::time::interval(FRAME);
@@ -149,13 +155,13 @@ impl App {
             },
             Mode::Play => {
                 if let Some(action) = action_for(key) {
-                    self.act(action, key);
+                    self.act(action);
                 }
             }
         }
     }
 
-    fn act(&mut self, action: Action, _key: KeyEvent) {
+    fn act(&mut self, action: Action) {
         let facing = self.state.facing();
         match action {
             Action::Move(dir) => {
@@ -171,6 +177,23 @@ impl App {
             Action::Chat => self.mode = Mode::Chat(String::new()),
             Action::ToggleIncognito => self.incognito = !self.incognito,
             Action::Quit => self.quit = true,
+            Action::ConfirmQuit => self.confirm_quit(Instant::now()),
+        }
+    }
+
+    /// Premier Esc : demande confirmation ; second Esc dans `QUIT_CONFIRM` : quitte.
+    fn confirm_quit(&mut self, now: Instant) {
+        // Rejeté : plus rien à perdre, le popup annonce « press esc to quit ».
+        if matches!(self.status, Status::Rejected(_)) {
+            self.quit = true;
+            return;
+        }
+        match self.quit_armed {
+            Some(t) if now.duration_since(t) <= QUIT_CONFIRM => self.quit = true,
+            _ => {
+                self.quit_armed = Some(now);
+                self.state.push_log(LogLine::new(LogKind::System, "Press Esc again to quit."));
+            }
         }
     }
 
@@ -184,7 +207,7 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crossterm::event::KeyModifiers;
+    use crossterm::event::{KeyEvent, KeyModifiers};
     use idk_shared::geo::Dir;
 
     #[test]
@@ -196,6 +219,13 @@ mod tests {
         assert!(matches!(app.status, Status::Rejected(_)));
     }
 
+    #[test]
+    fn single_esc_quits_when_rejected() {
+        let mut app = App::for_test(Status::Rejected("protocol mismatch".into()));
+        app.confirm_quit(Instant::now());
+        assert!(app.quit);
+    }
+
     fn chat_app(text: &str) -> App {
         let mut app = App::for_test(Status::Online);
         app.mode = Mode::Chat(text.into());
@@ -205,6 +235,41 @@ mod tests {
     fn chat_text(app: &App) -> &str {
         let Mode::Chat(t) = &app.mode else { panic!("not in chat") };
         t
+    }
+
+    #[test]
+    fn single_esc_does_not_quit() {
+        let mut app = App::for_test(Status::Online);
+        app.on_terminal(Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)));
+        assert!(!app.quit);
+        assert_eq!(app.state.log.back().unwrap().line.text, "Press Esc again to quit.");
+    }
+
+    #[test]
+    fn quick_double_esc_quits() {
+        let mut app = App::for_test(Status::Online);
+        let t = Instant::now();
+        app.confirm_quit(t);
+        app.confirm_quit(t + Duration::from_millis(500));
+        assert!(app.quit);
+    }
+
+    #[test]
+    fn late_second_esc_only_rearms() {
+        let mut app = App::for_test(Status::Online);
+        let t = Instant::now();
+        app.confirm_quit(t);
+        app.confirm_quit(t + Duration::from_secs(3));
+        assert!(!app.quit);
+        app.confirm_quit(t + Duration::from_secs(4));
+        assert!(app.quit);
+    }
+
+    #[test]
+    fn esc_cancels_chat_without_arming_quit() {
+        let mut app = chat_app("a");
+        app.on_terminal(Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)));
+        assert!(matches!(app.mode, Mode::Play) && !app.quit && app.quit_armed.is_none());
     }
 
     #[test]
@@ -270,7 +335,7 @@ mod tests {
     #[test]
     fn chat_offline_stays_in_play_and_logs() {
         let mut app = App::for_test(Status::Offline("gone".into()));
-        app.act(Action::Chat, KeyEvent::from(KeyCode::Null));
+        app.act(Action::Chat);
         assert!(matches!(app.mode, Mode::Play));
         assert!(
             matches!(&app.state.log.back().unwrap().line, LogLine { text, .. } if text == "Not connected.")
@@ -280,9 +345,9 @@ mod tests {
     #[test]
     fn build_uses_local_facing_after_move() {
         let mut app = App::for_test(Status::Online);
-        app.act(Action::Move(Dir::East), KeyEvent::from(KeyCode::Null));
-        app.act(Action::Move(Dir::North), KeyEvent::from(KeyCode::Null));
-        app.act(Action::Build, KeyEvent::from(KeyCode::Null));
+        app.act(Action::Move(Dir::East));
+        app.act(Action::Move(Dir::North));
+        app.act(Action::Build);
         assert_eq!(app.sent.try_recv().unwrap(), ClientMsg::Move(Dir::East));
         assert_eq!(app.sent.try_recv().unwrap(), ClientMsg::Move(Dir::North));
         assert_eq!(app.sent.try_recv().unwrap(), ClientMsg::Build(Dir::North));

@@ -208,8 +208,7 @@ fn draw_log(f: &mut Frame, app: &App, t: &Theme, area: Rect, block: Block) {
                 Span::styled(format!("{} ", super::clock(e.time % 86_400)), Style::new().fg(paint(t.dim)));
             let body = match &e.line.kind {
                 LogKind::Chat { from } => {
-                    let c = app.state.online.iter().find(|(n, _)| n == from).map(|(_, c)| *c).unwrap_or(0);
-                    let color = PLAYER_COLORS[c as usize % PLAYER_COLORS.len()];
+                    let color = PLAYER_COLORS[e.color as usize % PLAYER_COLORS.len()];
                     vec![
                         Span::styled(format!("<{from}> "), Style::new().fg(paint(color)).bold()),
                         Span::styled(e.line.text.clone(), Style::new().fg(paint(t.text))),
@@ -311,10 +310,12 @@ mod tests {
         use idk_shared::protocol::LogLine;
         let mut app = App::for_test(Status::Online);
         let line = |text: String| LogLine { kind: LogKind::Info, text };
-        app.state
-            .log
-            .push_back(crate::state::LogEntry { time: 0, line: line(format!("{}FINMSG", "y".repeat(200))) });
-        app.state.log.push_back(crate::state::LogEntry { time: 0, line: line("derniere".into()) });
+        app.state.log.push_back(crate::state::LogEntry {
+            time: 0,
+            line: line(format!("{}FINMSG", "y".repeat(200))),
+            color: 0,
+        });
+        app.state.log.push_back(crate::state::LogEntry { time: 0, line: line("derniere".into()), color: 0 });
         let s = screen(&app);
         assert!(s.contains("FINMSG"), "{s}");
         assert!(s.contains("derniere"), "{s}");
