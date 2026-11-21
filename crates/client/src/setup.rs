@@ -78,7 +78,7 @@ impl Wizard {
     pub fn config(&self) -> Config {
         Config {
             name: self.name().to_string(),
-            server: self.server().to_string(),
+            server: crate::config::normalize_server(self.server()),
             glyphs: self.glyphs,
             colors: self.colors,
             incognito: self.incognito,

@@ -4,13 +4,13 @@
 | 18-34 | Modules |
 | 35-51 | Démarrage |
 | 52-65 | Boucle principale |
-| 66-84 | Connexion et reconnexion |
-| 85-99 | GameState |
-| 100-113 | Layouts |
-| 114-132 | Chaîne glyphes et couleurs |
-| 133-153 | Assistant de configuration |
-| 154-159 | Table BINDINGS |
-| 160-164 | Docs liées |
+| 66-85 | Connexion et reconnexion |
+| 86-100 | GameState |
+| 101-114 | Layouts |
+| 115-133 | Chaîne glyphes et couleurs |
+| 134-154 | Assistant de configuration |
+| 155-160 | Table BINDINGS |
+| 161-165 | Docs liées |
 # Client : architecture
 
 > Vérifié le 2026-11-20 depuis `crates/client/src/` (`main.rs`, `app.rs`, `net.rs`, `state.rs`, `input.rs`, `config.rs`, `setup.rs`, `ui/`). Fiche : [vue-ensemble.md](vue-ensemble.md).
@@ -74,13 +74,14 @@ stateDiagram-v2
     Connecting --> Offline : échec de connexion
     Online --> Offline : socket fermé ou erreur
     Offline --> Connecting : pause de 2 s
-    Connecting --> Rejected : Rejected du serveur
+    Connecting --> Rejected : Rejected du serveur ou adresse mal formée
     Rejected --> [*] : plus de nouvel essai, Échap quitte
 ```
 
 - Les touches envoyées pendant la coupure sont vidées avant de se reconnecter (`while out.try_recv().is_ok()`).
 - À `Disconnected`, `GameState.me` et `online` sont remis à vide ; la carte devient vide (`map::render` ne dessine rien sans `me`) sous le popup de statut. À `Welcome`, tout l'état est remplacé sauf le journal.
 - Le statut passe à `Online` dès le premier message, `Welcome` inclus.
+- L'adresse serveur est normalisée (`config::normalize_server`, port `DEFAULT_PORT` ajouté s'il manque) à la sortie de l'assistant et au démarrage (`--server`, `IDK_SERVER`, fichier). Une adresse mal formée (`connect` en `InvalidInput`) donne `Rejected` ; un hôte inconnu (erreur DNS) reste en retry.
 
 ## GameState
 
