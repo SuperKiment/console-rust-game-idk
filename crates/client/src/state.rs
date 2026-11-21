@@ -5,7 +5,7 @@ use std::time::{Duration, Instant, SystemTime};
 
 use idk_shared::content::{Biome, Effect, Tile};
 use idk_shared::geo::{ChunkPos, Dir, Pos};
-use idk_shared::protocol::{ChunkData, EntityId, EntityView, KEEP_CHUNKS, LogLine, ServerMsg};
+use idk_shared::protocol::{ChunkData, EntityId, EntityView, KEEP_CHUNKS, LogKind, LogLine, ServerMsg};
 
 const LOG_SIZE: usize = 200;
 
@@ -13,6 +13,8 @@ pub struct LogEntry {
     /// Seconds since the Unix epoch.
     pub time: u64,
     pub line: LogLine,
+    /// Couleur (index palette) de l'auteur d'un chat, figée à la réception.
+    pub color: u8,
 }
 
 pub fn unix_now() -> u64 {
@@ -91,7 +93,11 @@ impl GameState {
     }
 
     pub fn push_log(&mut self, line: LogLine) {
-        self.log.push_back(LogEntry { time: unix_now(), line });
+        let color = match &line.kind {
+            LogKind::Chat { from } => self.online.iter().find(|(n, _)| n == from).map_or(0, |(_, c)| *c),
+            _ => 0,
+        };
+        self.log.push_back(LogEntry { time: unix_now(), line, color });
         if self.log.len() > LOG_SIZE {
             self.log.pop_front();
         }
@@ -132,5 +138,20 @@ impl GameState {
 
     pub fn effect_at(&self, p: Pos, now: Instant) -> Option<Effect> {
         self.effects.iter().rev().find(|(ep, _, until)| *ep == p && *until > now).map(|(_, e, _)| *e)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn chat_color_is_kept_after_author_leaves() {
+        let mut s = GameState::default();
+        let now = Instant::now();
+        s.apply(ServerMsg::Online(vec![("bob".into(), 3)]), now);
+        s.apply(ServerMsg::Log(LogLine::new(LogKind::Chat { from: "bob".into() }, "hi")), now);
+        s.apply(ServerMsg::Online(vec![]), now);
+        assert_eq!(s.log.back().unwrap().color, 3);
     }
 }

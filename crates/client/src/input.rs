@@ -11,7 +11,10 @@ pub enum Action {
     Break,
     Chat,
     ToggleIncognito,
+    /// Ctrl+C : quitte tout de suite.
     Quit,
+    /// Esc : quitte après confirmation (second Esc rapproché).
+    ConfirmQuit,
 }
 
 pub struct Binding {
@@ -27,9 +30,13 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         keys: &[Up, Char('w'), Char('k'), Char('z')],
         action: Action::Move(Dir::North),
-        help: Some(("↑←↓→ wasd hjkl", "move")),
+        help: Some(("↑←↓→ wasd", "move")),
     },
-    Binding { keys: &[Down, Char('s'), Char('j')], action: Action::Move(Dir::South), help: None },
+    Binding {
+        keys: &[Down, Char('s'), Char('j')],
+        action: Action::Move(Dir::South),
+        help: Some(("hjkl zqsd", "move")),
+    },
     Binding { keys: &[Left, Char('a'), Char('h'), Char('q')], action: Action::Move(Dir::West), help: None },
     Binding { keys: &[Right, Char('d'), Char('l')], action: Action::Move(Dir::East), help: None },
     Binding {
@@ -41,7 +48,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding { keys: &[Char('x')], action: Action::Break, help: Some(("x", "break")) },
     Binding { keys: &[Enter, Char('t')], action: Action::Chat, help: Some(("t enter", "chat")) },
     Binding { keys: &[F(2)], action: Action::ToggleIncognito, help: Some(("F2", "incognito")) },
-    Binding { keys: &[Esc], action: Action::Quit, help: Some(("esc ctrl-c", "quit")) },
+    Binding { keys: &[Esc], action: Action::ConfirmQuit, help: Some(("esc esc ctrl-c", "quit")) },
 ];
 
 /// Ctrl/Alt/Super + touche : jamais du texte ni une action de jeu (sauf Ctrl+C, géré à part).
@@ -99,6 +106,11 @@ mod tests {
         assert_eq!(action_for(key('W')), Some(Action::Move(Dir::North)));
         assert_eq!(action_for(key('q')), Some(Action::Move(Dir::West)));
         assert_eq!(action_for(KeyEvent::new(Char('c'), KeyModifiers::CONTROL)), Some(Action::Quit));
+    }
+
+    #[test]
+    fn esc_asks_confirmation_ctrl_c_quits() {
+        assert_eq!(action_for(KeyEvent::new(Esc, KeyModifiers::NONE)), Some(Action::ConfirmQuit));
     }
 
     #[test]
