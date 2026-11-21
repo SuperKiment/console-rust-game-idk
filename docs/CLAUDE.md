@@ -25,7 +25,7 @@ Le dépôt n'utilise ni `current-task/` ni `old-tasks/`. Correspondance avec la 
 Début de session : lire INDEX.md, puis les issues ouvertes et la PR ouverte éventuelle (outils GitHub MCP). Un travail interrompu laisse un commentaire « Reprendre ici » sur l'issue.
 
 ## Conventions du projet
-Les conventions de code propres à console-rust-game-idk vivent dans `project-specific-docs/` (préfixe `conventions-`). Elles sont listées dans INDEX.md. Lis celles qui concernent le code que tu touches avant de l'écrire.
+Les conventions de code propres à console-rust-game-idk vivent dans `project-specific-docs/` (préfixe `conventions-`). Elles sont listées dans INDEX.md. Lis celles qui concernent le code que tu touches avant de l'écrire. Aucune n'existe encore : à créer quand une règle de code durable émerge.
 
 ## Build, test, lint
 Le code est dans `..` (chemin relatif au dossier de docs ; `.` = même dossier).
