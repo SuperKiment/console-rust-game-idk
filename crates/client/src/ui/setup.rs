@@ -4,9 +4,8 @@ use idk_shared::content::{PLAYER_COLORS, PLAYER_GLYPH, Rgb, Species, Tile};
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Color, Style};
-use ratatui::symbols::border;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Paragraph, Wrap};
+use ratatui::widgets::{Paragraph, Wrap};
 
 use super::theme::NORMAL;
 use crate::config::{ColorDepth, GlyphSet};
@@ -40,14 +39,9 @@ pub fn draw(f: &mut Frame, w: &Wizard) {
         WIDTH.min(area.width),
         HEIGHT.min(area.height),
     );
-    let mut block = Block::bordered()
+    let block = super::bordered(w.glyphs)
         .border_style(Style::new().fg(paint(t.border)))
         .title(Span::styled(" idk · setup ", Style::new().fg(paint(t.title)).bold()));
-    block = if w.glyphs == GlyphSet::Ascii {
-        block.border_set(ASCII_BORDER)
-    } else {
-        block.border_type(BorderType::Rounded)
-    };
     let inner = block.inner(area).inner(ratatui::layout::Margin::new(2, 1));
     f.render_widget(block, area);
 
@@ -145,17 +139,6 @@ pub fn draw(f: &mut Frame, w: &Wizard) {
         hint,
     );
 }
-
-const ASCII_BORDER: border::Set = border::Set {
-    top_left: "+",
-    top_right: "+",
-    bottom_left: "+",
-    bottom_right: "+",
-    vertical_left: "|",
-    vertical_right: "|",
-    horizontal_top: "-",
-    horizontal_bottom: "-",
-};
 
 /// Tile symbols in Unicode, spaced out so a missing glyph is obvious.
 fn symbols_line(w: &Wizard, tiles: &[Tile]) -> Line<'static> {

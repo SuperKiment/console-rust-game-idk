@@ -9,11 +9,13 @@ use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style, Stylize};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Clear, Paragraph, Wrap};
+use ratatui::widgets::{Block, Clear, Paragraph, Wrap};
 
 use super::map::{self, MapStyle};
 use super::theme::{NORMAL, Theme};
+use super::{bordered, pick};
 use crate::app::{App, Mode, Status};
+use crate::config::GlyphSet;
 use crate::input::BINDINGS;
 
 const SIDEBAR: u16 = 32;
@@ -27,14 +29,14 @@ const NEARBY_RADIUS: i32 = 12;
 pub fn draw(f: &mut Frame, app: &App) {
     let t = &NORMAL;
     let paint = |c: Rgb| app.config.colors.paint(c);
+    let g = app.config.glyphs;
     // Journal : au plus un quart de la hauteur, jamais sous LOG_MIN_HEIGHT
     let log_h = (f.area().height / 4).clamp(LOG_MIN_HEIGHT, LOG_HEIGHT);
     let [main, log] = Layout::vertical([Constraint::Min(8), Constraint::Length(log_h)]).areas(f.area());
     let [map_area, side] = Layout::horizontal([Constraint::Min(20), Constraint::Length(SIDEBAR)]).areas(main);
 
     let block = |title: &str| {
-        Block::bordered()
-            .border_type(BorderType::Rounded)
+        bordered(g)
             .border_style(Style::new().fg(paint(t.border)))
             .title(Span::styled(format!(" {title} "), Style::new().fg(paint(t.title)).bold()))
     };
@@ -43,7 +45,7 @@ pub fn draw(f: &mut Frame, app: &App) {
     let s = &app.state;
     // Seed en hex court (8 caractères), seulement si le titre « idk » a la place
     let online = if map_area.width >= SEED_MIN_WIDTH {
-        format!(" seed {:08x} · {} online ", s.seed as u32, s.online.len())
+        format!(" seed {:08x} {} {} online ", s.seed as u32, pick(g, "·", "-"), s.online.len())
     } else {
         format!(" {} online ", s.online.len())
     };
@@ -137,7 +139,10 @@ pub fn draw(f: &mut Frame, app: &App) {
                     Span::styled(plural(name, *n), text),
                 ]);
                 if *yours {
-                    l.push_span(Span::styled(" ♥", Style::new().fg(paint(Rgb(255, 95, 135)))));
+                    l.push_span(Span::styled(
+                        format!(" {}", pick(g, "♥", "<3")),
+                        Style::new().fg(paint(Rgb(255, 95, 135))),
+                    ));
                 }
                 l
             })
@@ -151,8 +156,10 @@ pub fn draw(f: &mut Frame, app: &App) {
         .iter()
         .filter_map(|b| b.help)
         .map(|(k, what)| {
+            // Les flèches ne sont pas ASCII
+            let k = if g == GlyphSet::Ascii { k.replace("↑←↓→", "arrows") } else { k.to_string() };
             Line::from(vec![
-                Span::styled(format!("{k:<15}"), Style::new().fg(paint(t.accent))),
+                Span::styled(format!("{k:<17}"), Style::new().fg(paint(t.accent))),
                 Span::styled(what, dim),
             ])
         })
@@ -166,7 +173,11 @@ pub fn draw(f: &mut Frame, app: &App) {
         app,
         t,
         log,
-        block(if matches!(app.mode, Mode::Chat(_)) { "chat · enter send · esc cancel" } else { "log" }),
+        block(if matches!(app.mode, Mode::Chat(_)) {
+            pick(g, "chat · enter send · esc cancel", "chat - enter send - esc cancel")
+        } else {
+            "log"
+        }),
     );
     draw_status(f, app, t, map_area);
 }
@@ -226,7 +237,7 @@ fn draw_log(f: &mut Frame, app: &App, t: &Theme, area: Rect, block: Block) {
                 super::tail_fit(input, (input_area.width as usize).saturating_sub(3)),
                 Style::new().fg(paint(t.text)),
             ),
-            Span::styled("█", Style::new().fg(paint(t.accent))),
+            Span::styled(pick(app.config.glyphs, "█", "_"), Style::new().fg(paint(t.accent))),
         ]);
         f.render_widget(Paragraph::new(line), input_area);
     }
@@ -235,13 +246,19 @@ fn draw_log(f: &mut Frame, app: &App, t: &Theme, area: Rect, block: Block) {
 /// Centered popup while not connected.
 fn draw_status(f: &mut Frame, app: &App, t: &Theme, area: Rect) {
     let paint = |c: Rgb| app.config.colors.paint(c);
-    let spinner = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+    let g = app.config.glyphs;
+    let spinner: &[char] = if g == GlyphSet::Ascii {
+        &['|', '/', '-', '\\']
+    } else {
+        &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+    };
     let frame = spinner[(app.started.elapsed().as_millis() / 80) as usize % spinner.len()];
+    let dots = pick(g, "…", "...");
     let (title, msg) = match &app.status {
         Status::Online if app.state.me().is_some() => return,
-        Status::Online => ("joining", format!("{frame} entering the world…")),
-        Status::Connecting => ("connecting", format!("{frame} connecting to {}…", app.config.server)),
-        Status::Offline(reason) => ("offline", format!("{frame} {reason}\nretrying…")),
+        Status::Online => ("joining", format!("{frame} entering the world{dots}")),
+        Status::Connecting => ("connecting", format!("{frame} connecting to {}{dots}", app.config.server)),
+        Status::Offline(reason) => ("offline", format!("{frame} {reason}\nretrying{dots}")),
         Status::Rejected(reason) => ("rejected", format!("{reason}\npress esc to quit")),
     };
     let w = (msg.lines().map(|l| Line::from(l).width()).max().unwrap_or(0) as u16 + 6).min(area.width);
@@ -250,8 +267,7 @@ fn draw_status(f: &mut Frame, app: &App, t: &Theme, area: Rect) {
     let h = (text.line_count(w.saturating_sub(2)) as u16 + 2).min(area.height);
     let popup = Rect::new(area.x + (area.width - w) / 2, area.y + (area.height - h) / 2, w, h);
     f.render_widget(Clear, popup);
-    let block = Block::bordered()
-        .border_type(BorderType::Rounded)
+    let block = bordered(g)
         .border_style(Style::new().fg(paint(t.accent)))
         .title(Span::styled(format!(" {title} "), Style::new().fg(paint(t.title)).bold()));
     f.render_widget(text.block(block).fg(paint(t.text)), popup);
@@ -341,5 +357,26 @@ mod tests {
         let app = app_with_me();
         assert!(screen_at(&app, 120, 40).contains("quit"));
         assert!(!screen_at(&app, 60, 18).contains("keys"));
+    }
+
+    #[test]
+    fn ascii_glyphs_leave_no_unicode_in_chrome() {
+        use crate::config::GlyphSet;
+        // Connecté, chat ouvert, puis popup offline sur une autre app
+        let mut app = app_with_me();
+        app.config.glyphs = GlyphSet::Ascii;
+        app.mode = Mode::Chat("salut".into());
+        let s = screen_at(&app, 120, 40);
+        assert!(s.is_ascii(), "{s}");
+        let mut off = App::for_test(Status::Offline("connection lost".into()));
+        off.config.glyphs = GlyphSet::Ascii;
+        let s = screen_at(&off, 120, 40);
+        assert!(s.contains("retrying...") && s.is_ascii(), "{s}");
+        // Incognito
+        app.incognito = true;
+        app.mode = Mode::Play;
+        assert!(screen_at(&app, 120, 40).is_ascii());
+        off.incognito = true;
+        assert!(screen_at(&off, 120, 40).is_ascii());
     }
 }

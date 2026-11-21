@@ -10,6 +10,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
 use super::map::{self, MapStyle};
+use super::pick;
 use super::theme::INCOGNITO;
 use crate::app::{App, Mode, Status};
 use crate::config::GlyphSet;
@@ -43,8 +44,10 @@ fn draw_tabs(f: &mut Frame, app: &App, area: Rect) {
     let biome = s.my_pos().and_then(|p| s.biome(p)).map(|b| b.def().name.replace(' ', "_"));
     let file = biome.map_or_else(|| "main.rs".to_string(), |b| format!("{b}.rs"));
     // The open tab shares the editor's background (the terminal's), the others sit on the bar.
-    let mut spans =
-        vec![Span::styled(format!(" {file}  × "), Style::new().fg(paint(t.text)).bg(Color::Reset))];
+    let mut spans = vec![Span::styled(
+        format!(" {file}  {} ", pick(app.config.glyphs, "×", "x")),
+        Style::new().fg(paint(t.text)).bg(Color::Reset),
+    )];
     spans.extend(OTHER_TABS.map(|name| Span::styled(format!(" {name} "), Style::new().fg(paint(t.dim)))));
     f.render_widget(Paragraph::new(Line::from(spans)).style(Style::new().bg(paint(t.border))), area);
 }
@@ -174,7 +177,12 @@ fn draw_bar(f: &mut Frame, app: &App, area: Rect) {
     let bar = Style::new().fg(paint(t.text)).bg(paint(t.border));
     let typing = matches!(app.mode, Mode::Chat(_));
     let mode = if typing { " INSERT " } else { " NORMAL " };
-    let right = format!(" {} · {} ", users(app.state.online.len()), &super::clock(unix_now() % 86_400)[..5]);
+    let right = format!(
+        " {} {} {} ",
+        users(app.state.online.len()),
+        pick(app.config.glyphs, "·", "|"),
+        &super::clock(unix_now() % 86_400)[..5]
+    );
     let [mode_area, mid, right_area] = Layout::horizontal([
         Constraint::Length(mode.len() as u16),
         Constraint::Min(0),
@@ -209,12 +217,14 @@ fn command_line(text: &str, width: usize) -> String {
 
 /// Connection state, shown in the status bar instead of a popup.
 fn notice(app: &App) -> Option<String> {
+    let g = app.config.glyphs;
+    let (dots, dash) = (pick(g, "…", "..."), pick(g, "—", "-"));
     match &app.status {
         Status::Online if app.state.me().is_some() => None,
-        Status::Online => Some("[joining…]".into()),
-        Status::Connecting => Some(format!("[connecting to {}…]", app.config.server)),
-        Status::Offline(_) => Some("[disconnected — retrying]".into()),
-        Status::Rejected(reason) => Some(format!("[rejected: {reason} — esc to quit]")),
+        Status::Online => Some(format!("[joining{dots}]")),
+        Status::Connecting => Some(format!("[connecting to {}{dots}]", app.config.server)),
+        Status::Offline(_) => Some(format!("[disconnected {dash} retrying]")),
+        Status::Rejected(reason) => Some(format!("[rejected: {reason} {dash} esc to quit]")),
     }
 }
 
