@@ -91,6 +91,10 @@ impl Wizard {
         {
             return Outcome::Cancel;
         }
+        // Ctrl/Alt/Super + lettre : ni texte ni réponse y/n.
+        if matches!(key.code, KeyCode::Char(_)) && crate::input::has_modifier(key) {
+            return Outcome::Continue;
+        }
         match (key.code, self.input()) {
             (KeyCode::Backspace, Some((text, _))) if !text.is_empty() => {
                 text.pop();
@@ -104,6 +108,13 @@ impl Wizard {
             (code, _) => return self.answer(code),
         }
         Outcome::Continue
+    }
+
+    /// Collage dans un champ texte ; ignoré ailleurs.
+    pub fn on_paste(&mut self, pasted: &str) {
+        if let Some((text, max)) = self.input() {
+            crate::input::push_pasted(text, pasted, max);
+        }
     }
 
     /// Text buffer and max length of the current screen, if it is a text step.
@@ -184,7 +195,14 @@ pub fn run(terminal: &mut DefaultTerminal, base: Config) -> io::Result<Option<Co
     let mut wizard = Wizard::new(base);
     loop {
         terminal.draw(|f| crate::ui::setup::draw(f, &wizard))?;
-        let Event::Key(key) = event::read()? else { continue };
+        let key = match event::read()? {
+            Event::Key(key) => key,
+            Event::Paste(s) => {
+                wizard.on_paste(&s);
+                continue;
+            }
+            _ => continue,
+        };
         if key.kind == KeyEventKind::Release {
             continue;
         }
