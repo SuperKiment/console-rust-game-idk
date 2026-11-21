@@ -173,3 +173,37 @@ async fn same_name_replaces_old_connection() {
     let _ = stop.send(());
     task.await.unwrap();
 }
+
+/// Sends one raw frame (4-byte big-endian length prefix) and returns what the server answers.
+async fn raw_handshake(addr: std::net::SocketAddr, payload: &[u8]) -> Option<ServerMsg> {
+    use tokio::io::AsyncWriteExt;
+    let mut stream = TcpStream::connect(addr).await.unwrap();
+    let mut frame = (payload.len() as u32).to_be_bytes().to_vec();
+    frame.extend_from_slice(payload);
+    stream.write_all(&frame).await.unwrap();
+    let (mut r, _w) = net::split(stream);
+    tokio::time::timeout(Duration::from_secs(5), r.recv::<ServerMsg>()).await.expect("timed out").unwrap()
+}
+
+#[tokio::test]
+async fn bad_handshake_is_rejected() {
+    let (addr, stop, task) = start(None).await;
+
+    // Octets qui ne décodent pas en `ClientMsg`.
+    let reply = raw_handshake(addr, &[0xFF; 8]).await;
+    assert!(
+        matches!(reply, Some(ServerMsg::Rejected(ref m)) if m.contains("bad handshake")),
+        "got {reply:?}"
+    );
+
+    // Premier message valide mais pas un `Hello`.
+    let ping = postcard::to_stdvec(&ClientMsg::Ping).unwrap();
+    let reply = raw_handshake(addr, &ping).await;
+    assert!(
+        matches!(reply, Some(ServerMsg::Rejected(ref m)) if m.contains("bad handshake")),
+        "got {reply:?}"
+    );
+
+    let _ = stop.send(());
+    task.await.unwrap();
+}

@@ -64,10 +64,6 @@ impl World {
         self.chunk(p.chunk()).tiles[p.local_index()]
     }
 
-    pub fn biome(&mut self, p: Pos) -> Biome {
-        self.chunk(p.chunk()).biomes[p.local_index()]
-    }
-
     pub fn set_tile(&mut self, p: Pos, tile: Tile) {
         let c = self.chunk(p.chunk());
         c.tiles[p.local_index()] = tile;

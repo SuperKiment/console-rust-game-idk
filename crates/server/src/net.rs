@@ -41,7 +41,13 @@ async fn handle(stream: TcpStream, conn: u64, events: UnboundedSender<Event>) {
             let _ = writer.send(&ServerMsg::Rejected(msg)).await;
             return;
         }
-        _ => return,
+        // Hello illisible ou premier message qui n'est pas un `Hello` : le client est probablement trop vieux.
+        Ok(Err(_) | Ok(Some(_))) => {
+            let _ = writer.send(&ServerMsg::Rejected("bad handshake, update your client".into())).await;
+            return;
+        }
+        // Délai dépassé ou connexion fermée par le pair : rien à dire.
+        Err(_) | Ok(Ok(None)) => return,
     };
 
     let (tx, mut rx) = mpsc::channel::<ServerMsg>(SEND_QUEUE);
