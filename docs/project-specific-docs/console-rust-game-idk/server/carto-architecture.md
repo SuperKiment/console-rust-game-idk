@@ -1,15 +1,16 @@
-12
+13
 | Lignes | Section |
 |---|---|
-| 17-30 | Modules |
-| 31-53 | Boucle de jeu |
-| 54-64 | — Tick (20 Hz) |
-| 65-70 | — Actions des joueurs |
-| 71-97 | Monde par chunks |
-| 98-104 | — Streaming de chunks |
-| 105-119 | IA des animaux (paramétrique) |
-| 120-137 | Sauvegarde |
-| 138-142 | Docs liées |
+| 18-31 | Modules |
+| 32-54 | Boucle de jeu |
+| 55-67 | — Tick (20 Hz) |
+| 68-73 | — Actions des joueurs |
+| 74-88 | — Sessions et déconnexions |
+| 89-115 | Monde par chunks |
+| 116-122 | — Streaming de chunks |
+| 123-137 | IA des animaux (paramétrique) |
+| 138-155 | Sauvegarde |
+| 156-160 | Docs liées |
 # Serveur : architecture
 
 > Vérifié le 2026-11-20 depuis `crates/server/src/` (`lib.rs`, `main.rs`, `net.rs`, `game.rs`, `ai.rs`, `save.rs`, `rng.rs`, `world/`). Fiche : [vue-ensemble.md](vue-ensemble.md).
@@ -30,7 +31,7 @@
 
 ## Boucle de jeu
 
-Une seule tâche possède `Game` : pas de verrou, tout changement passe par `Game::event` ou `Game::tick`. Les tâches réseau n'y touchent que par canaux `mpsc` non bornés.
+Une seule tâche possède `Game` : pas de verrou, tout changement passe par `Game::event` ou `Game::tick`. Les tâches réseau n'y touchent que par canaux `mpsc` : `events` non borné (réseau vers jeu), file d'envoi par joueur bornée à `SEND_QUEUE` = 256 messages (jeu vers réseau).
 
 ```mermaid
 flowchart LR
@@ -60,6 +61,8 @@ flowchart LR
 3. **Streaming de chunks** : `stream_chunks` pour chaque joueur.
 4. **Entités** : `send_entities` envoie à chaque joueur les entités à moins de `VIEW_TILES` (96 tuiles). Le filtre par distance passe avant le clonage : seules les entités visibles sont copiées.
 
+5. **File pleine** : un joueur dont la file d'envoi a débordé pendant le tick est déconnecté (`leave`), voir « Sessions et déconnexions ».
+
 Un `Move` reçu hors cooldown (`MOVE_COOLDOWN` = 90 ms) s'exécute tout de suite dans `handle`. Sinon, il est mémorisé en `pending_move` (un seul, le dernier) pour le prochain tick.
 
 ### Actions des joueurs
@@ -67,6 +70,21 @@ Un `Move` reçu hors cooldown (`MOVE_COOLDOWN` = 90 ms) s'exécute tout de suite
 Dans `Game::handle` : `Interact`, `Build`, `Break` visent la tuile adjacente dans la direction donnée. `Build` pose `Tile::BUILT` (`Wall`) sur une tuile praticable, libre de joueur et d'animal. `Break` utilise `breaks_into` de la définition de la tuile. `set_tile` notifie par `TileChanged` les joueurs qui détiennent le chunk, plus un effet `Dust`.
 
 Les animaux ne bloquent jamais un joueur (commentaire de `try_move`), mais un joueur bloque les animaux.
+
+### Sessions et déconnexions
+
+`Game.players` est indexé par `ConnId` (unique par connexion TCP). La tâche connexion (`crates/server/src/net.rs`) :
+
+- ferme la session après `READ_TIMEOUT` = 15 s sans message du client (le client envoie un `Ping` toutes les 5 s) ; une coupure sans fermeture TCP (wifi, half-open) n'immobilise donc plus une session fantôme pendant ~15 min ;
+- arrête la lecture quand la tâche d'écriture se termine (écriture en échec, ou `Game` qui lâche le `tx`), et abandonne l'écriture à la fin de la lecture ;
+- envoie `Event::Leave(conn)` à la fin.
+
+Côté `Game` :
+
+- Envoi par `Player::send` (`try_send`). File pleine : drapeau `overflow`, déconnexion au tick suivant. File fermée : rien, le `Leave` de la tâche réseau arrive de lui-même.
+- `join` avec un nom déjà connecté **remplace** la session : l'ancien joueur est retiré de `players` (son `tx` est lâché, ce qui ferme sa connexion), il reçoit `Rejected("replaced by new connection")` en dernier message, et la nouvelle connexion reprend `id`, position et orientation. Pas de passage par `offline`. Les animaux apprivoisés sont liés au nom : rien à migrer.
+- Le `Leave` tardif de l'ancienne `ConnId` ne trouve plus de joueur : sans effet, il n'écrase ni le nouveau joueur ni `offline`.
+- Nom nettoyé par `clean_name` (contrôles filtrés, `trim`, 16 caractères) ; plus de suffixe numérique.
 
 ## Monde par chunks
 

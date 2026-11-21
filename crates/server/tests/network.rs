@@ -136,3 +136,40 @@ async fn world_and_players_persist_across_restarts() {
     task.await.unwrap();
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[tokio::test]
+async fn same_name_replaces_old_connection() {
+    let (addr, stop, task) = start(None).await;
+    let (mut r1, mut w1, id1) = connect(addr, "alice").await;
+    let moved = wait_for(&mut r1, |m| my_pos(m, id1)).await;
+    w1.send(&ClientMsg::Ping).await.unwrap();
+
+    // Second connection, same name: takes over identity and position, no "alice2".
+    let (mut r2, _w2, id2) = connect(addr, "alice").await;
+    assert_eq!(id2, id1);
+    assert_eq!(wait_for(&mut r2, |m| my_pos(m, id2)).await, moved);
+
+    // The old one is told why, then closed.
+    wait_for(&mut r1, |m| matches!(m, ServerMsg::Rejected(r) if r.contains("replaced")).then_some(())).await;
+    let end = tokio::time::timeout(Duration::from_secs(5), async {
+        while let Ok(Some(_)) = r1.recv::<ServerMsg>().await {}
+    })
+    .await;
+    assert!(end.is_ok(), "old connection closed by the server");
+
+    // The new session survives the old one's cleanup: exactly one "alice" in view, with the same id.
+    let alices = wait_for(&mut r2, |m| match m {
+        ServerMsg::Entities(es) => Some(
+            es.into_iter()
+                .filter(|e| matches!(&e.look, Look::Player { name, .. } if name == "alice"))
+                .count(),
+        ),
+        _ => None,
+    })
+    .await;
+    assert_eq!(alices, 1);
+    wait_for(&mut r2, |m| my_pos(m, id2)).await;
+
+    let _ = stop.send(());
+    task.await.unwrap();
+}

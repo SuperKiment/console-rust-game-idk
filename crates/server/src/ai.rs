@@ -145,16 +145,13 @@ mod tests {
     use crate::world::World;
     use idk_shared::content::{Species, Tile};
     use idk_shared::protocol::{ClientMsg, ServerMsg};
-    use tokio::sync::mpsc::UnboundedReceiver;
+    use tokio::sync::mpsc::Receiver;
 
     /// A game with one player on a cleared 41x41 grass field, and one animal at `offset`.
-    fn setup(
-        species: Species,
-        offset: (i32, i32),
-    ) -> (Game, EntityId, UnboundedReceiver<ServerMsg>, Instant) {
+    fn setup(species: Species, offset: (i32, i32)) -> (Game, EntityId, Receiver<ServerMsg>, Instant) {
         let now = Instant::now();
         let mut g = Game::new(World::new(5));
-        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, rx) = tokio::sync::mpsc::channel(crate::game::SEND_QUEUE);
         g.event(Event::Join { conn: 1, name: "alice".into(), tx }, now);
         g.animals.clear();
         let o = g.players[&1].pos;

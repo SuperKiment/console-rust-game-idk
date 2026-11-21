@@ -1,6 +1,7 @@
 //! Authoritative game state. Owned by a single task: no locks, every change goes through [`Game::event`]
 //! or [`Game::tick`].
 
+use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
@@ -9,7 +10,8 @@ use idk_shared::geo::{CHUNK_SIZE, ChunkPos, Dir, Pos};
 use idk_shared::protocol::{
     ClientMsg, EntityId, EntityView, KEEP_CHUNKS, LogKind, LogLine, Look, ServerMsg, VIEW_CHUNKS,
 };
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::mpsc::Sender;
+use tokio::sync::mpsc::error::TrySendError;
 
 use crate::rng::Rng;
 use crate::world::World;
@@ -21,12 +23,14 @@ const MOVE_COOLDOWN: Duration = Duration::from_millis(90);
 pub const VIEW_TILES: i32 = VIEW_CHUNKS * CHUNK_SIZE;
 const MAX_CHAT: usize = 240;
 const MAX_NAME: usize = 16;
+/// Taille de la file d'envoi par client (messages). Pleine = client trop lent ou gelé : déconnecté.
+pub const SEND_QUEUE: usize = 256;
 /// Rayon maximal (en tuiles) de la recherche d'une tuile praticable à la connexion.
 const MAX_SPAWN_SEARCH: i32 = 32;
 
 /// What the network layer reports to the game.
 pub enum Event {
-    Join { conn: ConnId, name: String, tx: UnboundedSender<ServerMsg> },
+    Join { conn: ConnId, name: String, tx: Sender<ServerMsg> },
     Msg(ConnId, ClientMsg),
     Leave(ConnId),
 }
@@ -37,11 +41,23 @@ pub struct Player {
     pub color: u8,
     pub pos: Pos,
     pub facing: Dir,
-    tx: UnboundedSender<ServerMsg>,
+    tx: Sender<ServerMsg>,
+    /// Passe à vrai quand la file d'envoi est pleine ; `tick` déconnecte alors le joueur.
+    overflow: Cell<bool>,
     /// Chunks this client currently holds.
     sent: HashSet<ChunkPos>,
     next_move: Instant,
     pending_move: Option<Dir>,
+}
+
+impl Player {
+    /// Envoie sans bloquer. File pleine : le joueur sera déconnecté au prochain tick.
+    /// File fermée : la tâche réseau se termine, son `Leave` arrive de lui-même.
+    pub fn send(&self, msg: ServerMsg) {
+        if let Err(TrySendError::Full(_)) = self.tx.try_send(msg) {
+            self.overflow.set(true);
+        }
+    }
 }
 
 pub struct Animal {
@@ -101,18 +117,37 @@ impl Game {
             self.stream_chunks(conn, now);
         }
         self.send_entities();
+        let slow: Vec<ConnId> =
+            self.players.iter().filter(|(_, p)| p.overflow.get()).map(|(c, _)| *c).collect();
+        for conn in slow {
+            tracing::warn!(name = %self.players[&conn].name, "send queue full, disconnecting");
+            self.leave(conn);
+        }
     }
 
     // --- connections ---
 
-    fn join(&mut self, conn: ConnId, raw_name: &str, tx: UnboundedSender<ServerMsg>, now: Instant) {
-        let name = self.unique_name(raw_name);
-        let (pos, facing) =
-            self.offline.remove(&name).unwrap_or_else(|| (self.world.spawn_point(), Dir::South));
+    fn join(&mut self, conn: ConnId, raw_name: &str, tx: Sender<ServerMsg>, now: Instant) {
+        let name = clean_name(raw_name);
+        // Même nom déjà connecté (typiquement une session fantôme après coupure réseau) :
+        // la nouvelle connexion remplace l'ancienne et reprend son identité, sa position et ses animaux.
+        let old = self.conn_of(&name).and_then(|c| self.players.remove(&c));
+        let replaced = old.is_some();
+        let (id, pos, facing) = match old {
+            Some(old) => {
+                // Un tx plein fait échouer l'envoi : l'ancienne connexion est fermée à la chute du tx.
+                old.send(ServerMsg::Rejected("replaced by new connection".into()));
+                (old.id, old.pos, old.facing)
+            }
+            None => {
+                let (pos, facing) =
+                    self.offline.remove(&name).unwrap_or_else(|| (self.world.spawn_point(), Dir::South));
+                (self.alloc_id(), pos, facing)
+            }
+        };
         // Le monde a pu changer depuis (mur posé sur la position ou sur le point d'apparition).
         let pos = self.nearest_walkable(pos);
-        let id = self.alloc_id();
-        let _ = tx.send(ServerMsg::Welcome { id, name: name.clone(), seed: self.world.seed });
+        let _ = tx.try_send(ServerMsg::Welcome { id, name: name.clone(), seed: self.world.seed });
         let color = player_color_index(&name);
         let player = Player {
             id,
@@ -121,13 +156,19 @@ impl Game {
             pos,
             facing,
             tx,
+            overflow: Cell::new(false),
             sent: HashSet::new(),
             next_move: now,
             pending_move: None,
         };
         self.players.insert(conn, player);
-        tracing::info!(%name, ?pos, "player joined");
-        self.broadcast_log(LogKind::System, format!("{name} joined the world."));
+        if replaced {
+            tracing::info!(%name, ?pos, "player reconnected, old session replaced");
+            self.broadcast_log(LogKind::System, format!("{name} reconnected."));
+        } else {
+            tracing::info!(%name, ?pos, "player joined");
+            self.broadcast_log(LogKind::System, format!("{name} joined the world."));
+        }
         self.broadcast_online();
         self.stream_chunks(conn, now);
     }
@@ -159,13 +200,6 @@ impl Game {
         }
     }
 
-    fn unique_name(&self, raw: &str) -> String {
-        let base: String = raw.trim().chars().filter(|c| !c.is_control()).take(MAX_NAME).collect();
-        let base = if base.is_empty() { "player".to_string() } else { base };
-        let taken = |n: &str| self.players.values().any(|p| p.name == n);
-        (1..).map(|i| if i == 1 { base.clone() } else { format!("{base}{i}") }).find(|n| !taken(n)).unwrap()
-    }
-
     pub fn alloc_id(&mut self) -> EntityId {
         self.next_id += 1;
         self.next_id - 1
@@ -176,7 +210,8 @@ impl Game {
     fn handle(&mut self, conn: ConnId, msg: ClientMsg, now: Instant) {
         let Some(p) = self.players.get_mut(&conn) else { return };
         match msg {
-            ClientMsg::Hello { .. } => {}
+            // Ping : sert seulement à réarmer le délai de lecture côté réseau.
+            ClientMsg::Hello { .. } | ClientMsg::Ping => {}
             ClientMsg::Move(dir) => {
                 p.facing = dir;
                 if now >= p.next_move {
@@ -268,7 +303,7 @@ impl Game {
         self.world.set_tile(pos, tile);
         let cp = pos.chunk();
         for p in self.players.values().filter(|p| p.sent.contains(&cp)) {
-            let _ = p.tx.send(ServerMsg::TileChanged { pos, tile });
+            p.send(ServerMsg::TileChanged { pos, tile });
         }
         self.effect(pos, Effect::Dust);
     }
@@ -291,13 +326,13 @@ impl Game {
 
     pub fn tell(&self, conn: ConnId, kind: LogKind, text: impl Into<String>) {
         if let Some(p) = self.players.get(&conn) {
-            let _ = p.tx.send(ServerMsg::Log(LogLine::new(kind, text)));
+            p.send(ServerMsg::Log(LogLine::new(kind, text)));
         }
     }
 
     fn broadcast(&self, msg: ServerMsg) {
         for p in self.players.values() {
-            let _ = p.tx.send(msg.clone());
+            p.send(msg.clone());
         }
     }
 
@@ -316,13 +351,13 @@ impl Game {
     pub fn log_near(&self, pos: Pos, radius: i32, kind: LogKind, text: impl Into<String>) {
         let line = LogLine::new(kind, text);
         for p in self.players.values().filter(|p| p.pos.dist(pos) <= radius) {
-            let _ = p.tx.send(ServerMsg::Log(line.clone()));
+            p.send(ServerMsg::Log(line.clone()));
         }
     }
 
     pub fn effect(&self, pos: Pos, effect: Effect) {
         for p in self.players.values().filter(|p| p.pos.dist(pos) <= VIEW_TILES) {
-            let _ = p.tx.send(ServerMsg::Effect { pos, effect });
+            p.send(ServerMsg::Effect { pos, effect });
         }
     }
 
@@ -343,7 +378,7 @@ impl Game {
                     Animal { id, species, pos, facing: Dir::South, tamed_by: None, next_step: now },
                 );
             }
-            let _ = p.tx.send(ServerMsg::Chunk(world.chunk_data(cp)));
+            p.send(ServerMsg::Chunk(world.chunk_data(cp)));
             p.sent.insert(cp);
         }
         p.sent.retain(|c| c.dist(center) <= KEEP_CHUNKS);
@@ -365,18 +400,103 @@ impl Game {
                 facing: a.facing,
                 look: Look::Animal { species: a.species, tamed_by: a.tamed_by.clone() },
             });
-            let _ = p.tx.send(ServerMsg::Entities(players.chain(animals).collect()));
+            p.send(ServerMsg::Entities(players.chain(animals).collect()));
         }
     }
+}
+
+/// Nom d'affichage : sans caractères de contrôle, sans espaces aux bords, au plus `MAX_NAME` caractères.
+fn clean_name(raw: &str) -> String {
+    let filtered: String = raw.chars().filter(|c| !c.is_control()).collect();
+    let name: String = filtered.trim().chars().take(MAX_NAME).collect();
+    // Le `take` peut laisser un espace en fin de nom (ex. "abc def" coupé après l'espace).
+    let name = name.trim_end();
+    if name.is_empty() { "player".to_string() } else { name.to_string() }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::sync::mpsc::Receiver;
 
     fn join(g: &mut Game, conn: ConnId, name: &str, now: Instant) {
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        join_rx(g, conn, name, now);
+    }
+
+    /// Like [`join`], but keeps the receiving end of the player's send queue.
+    fn join_rx(g: &mut Game, conn: ConnId, name: &str, now: Instant) -> Receiver<ServerMsg> {
+        let (tx, rx) = tokio::sync::mpsc::channel(SEND_QUEUE);
         g.event(Event::Join { conn, name: name.into(), tx }, now);
+        rx
+    }
+
+    fn drain(rx: &mut Receiver<ServerMsg>) -> Vec<ServerMsg> {
+        std::iter::from_fn(|| rx.try_recv().ok()).collect()
+    }
+
+    #[test]
+    fn same_name_replaces_old_session_and_keeps_state() {
+        let now = Instant::now();
+        let mut g = Game::new(World::new(5));
+        let mut old_rx = join_rx(&mut g, 1, "alice", now);
+        let id = g.players[&1].id;
+        g.players.get_mut(&1).unwrap().pos = Pos::new(40, 40);
+        g.players.get_mut(&1).unwrap().facing = Dir::West;
+        g.animals.clear();
+        g.animals.insert(
+            9_000_000,
+            Animal {
+                id: 9_000_000,
+                species: Species::Dog,
+                pos: Pos::new(41, 40),
+                facing: Dir::South,
+                tamed_by: Some("alice".into()),
+                next_step: now,
+            },
+        );
+        drain(&mut old_rx);
+
+        let mut new_rx = join_rx(&mut g, 2, "alice", now);
+        assert_eq!(g.players.len(), 1, "one player only");
+        let p = &g.players[&2];
+        assert_eq!((p.name.as_str(), p.id, p.facing), ("alice", id, Dir::West));
+        assert!(p.pos.dist(Pos::new(40, 40)) <= 1, "position kept (nearest walkable)");
+        assert_eq!(g.animals[&9_000_000].tamed_by.as_deref(), Some(p.name.as_str()));
+        assert!(!g.offline.contains_key("alice"));
+        let old_msgs = drain(&mut old_rx);
+        assert_eq!(old_msgs, vec![ServerMsg::Rejected("replaced by new connection".into())]);
+        assert!(matches!(old_rx.try_recv(), Err(tokio::sync::mpsc::error::TryRecvError::Disconnected)));
+        assert!(
+            matches!(drain(&mut new_rx).first(), Some(ServerMsg::Welcome { name, .. }) if name == "alice")
+        );
+
+        // Le `Leave` tardif de l'ancienne connexion ne touche ni le nouveau joueur ni `offline`.
+        g.event(Event::Leave(1), now);
+        assert!(g.players.contains_key(&2));
+        assert!(g.offline.is_empty());
+        g.event(Event::Msg(1, ClientMsg::Chat("ghost".into())), now);
+        assert!(drain(&mut new_rx).iter().all(|m| !matches!(m, ServerMsg::Log(l) if l.text == "ghost")));
+    }
+
+    #[test]
+    fn full_send_queue_disconnects_player() {
+        let now = Instant::now();
+        let mut g = Game::new(World::new(5));
+        let _rx = join_rx(&mut g, 1, "slow", now);
+        for i in 0..SEND_QUEUE as u64 + 5 {
+            g.tick(now + Duration::from_millis(i * 50));
+        }
+        assert!(g.players.is_empty(), "slow client dropped");
+        assert!(g.offline.contains_key("slow"), "position kept for its return");
+    }
+
+    #[test]
+    fn names_are_cleaned() {
+        assert_eq!(clean_name("  bob "), "bob");
+        assert_eq!(clean_name("a "), "a");
+        assert_eq!(clean_name(" "), "player");
+        assert_eq!(clean_name("abcdefghijklmno pqrst"), "abcdefghijklmno");
+        assert_eq!(clean_name(&"é".repeat(40)).chars().count(), MAX_NAME);
     }
 
     #[test]

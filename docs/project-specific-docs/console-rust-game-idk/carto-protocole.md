@@ -1,13 +1,14 @@
-10
+11
 | Lignes | Section |
 |---|---|
-| 17-20 | Framing |
-| 21-43 | Messages |
-| 44-70 | Séquence de connexion |
-| 71-77 | Règles du serveur à l'accueil |
-| 78-81 | Côté client |
-| 82-91 | Versionnement |
-| 92-94 | Points non vérifiés |
+| 18-21 | Framing |
+| 22-45 | Messages |
+| 46-72 | Séquence de connexion |
+| 73-80 | Règles du serveur à l'accueil |
+| 81-92 | Keepalive et timeouts |
+| 93-96 | Côté client |
+| 97-106 | Versionnement |
+| 107-109 | Points non vérifiés |
 # Protocole client-serveur
 
 > Vérifié le 2026-11-20 depuis `crates/shared/src/protocol.rs`, `crates/shared/src/net.rs`, `crates/server/src/net.rs`, `crates/server/src/game.rs`, `crates/client/src/net.rs`, `crates/client/src/state.rs`.
@@ -29,17 +30,18 @@ Définis dans `crates/shared/src/protocol.rs`.
 | `Interact(Dir)` | caresse un animal, salue un joueur, ou décrit la tuile visée |
 | `Build(Dir)` / `Break(Dir)` | pose un mur / casse la tuile adjacente |
 | `Chat(String)` | message public |
+| `Ping` | keepalive toutes les 5 s ; ignoré par `Game`, il sert à réarmer le délai de lecture du serveur |
 
 | `ServerMsg` | Rôle |
 |---|---|
-| `Welcome { id, name, seed }` | accepte la connexion (le nom peut être modifié pour être unique) |
+| `Welcome { id, name, seed }` | accepte la connexion (le nom peut être nettoyé, voir « Règles du serveur à l'accueil ») |
 | `Chunk(ChunkData)` | contenu complet d'un chunk (`CHUNK_AREA` = 1024 tuiles et biomes) |
 | `TileChanged { pos, tile }` | une tuile a changé, envoyé aux joueurs qui détiennent le chunk |
 | `Entities(Vec<EntityView>)` | entités proches du joueur, envoyé à chaque tick |
 | `Log(LogLine)` | ligne de journal (`System`, `Info`, `Chat`, `Animal`) |
 | `Effect { pos, effect }` | effet visuel éphémère |
 | `Online(Vec<(String, u8)>)` | joueurs connectés `(nom, couleur)`, à chaque arrivée et départ |
-| `Rejected(String)` | refus (versions différentes) ; le serveur ferme ensuite le socket |
+| `Rejected(String)` | refus (versions différentes, ou session remplacée : `replaced by new connection`) ; le serveur ferme ensuite le socket |
 
 ## Séquence de connexion
 
@@ -72,17 +74,30 @@ Le point clé : `Entities` est le seul message périodique. Les chunks ne sont e
 
 - `Hello` doit arriver en moins de `HELLO_TIMEOUT` (10 s), sinon la connexion est fermée en silence.
 - Un `Hello` hors du premier message est ignoré.
-- Nom : espaces retirés, caractères de contrôle supprimés, 16 caractères max, `player` si vide ; suffixe `2`, `3`… si déjà pris par un joueur connecté.
+- Nom : caractères de contrôle supprimés puis espaces des bords retirés, 16 caractères max, `player` si vide (`clean_name`).
+- Nom déjà connecté : la nouvelle connexion **remplace** l'ancienne (plus de suffixe `2`, `3`…). L'ancienne reçoit `Rejected("replaced by new connection")` puis est fermée ; la nouvelle reprend l'id, la position et l'orientation (les animaux apprivoisés sont liés au nom, ils suivent donc). Le `Leave` tardif de l'ancienne connexion est sans effet : `Game.players` est indexé par `ConnId`.
 - Les messages `ClientMsg` d'une connexion non enregistrée dans `Game` sont ignorés.
+
+## Keepalive et timeouts
+
+| Où | Délai | Effet |
+|---|---|---|
+| Serveur, attente de `Hello` | 10 s (`HELLO_TIMEOUT`) | connexion fermée en silence |
+| Serveur, lecture | 15 s sans aucun message (`READ_TIMEOUT`) | fin de session, `Leave` : le joueur passe hors ligne, position gardée |
+| Client, envoi | `Ping` toutes les 5 s (`PING_EVERY`) | garde la session vivante côté serveur |
+| Client, `connect` | 5 s (`CONNECT_TIMEOUT`) | échec puis nouvel essai |
+| Client, silence du serveur | 5 s (`SILENCE`) | `Disconnected`, puis reconnexion (le serveur émet `Entities` à 20 Hz) |
+
+File d'envoi serveur par client : `mpsc::channel(SEND_QUEUE)` = 256 messages. Envoi par `try_send` ; file pleine (client gelé ou trop lent) : le joueur est déconnecté au tick suivant. La fin de la tâche d'écriture ferme aussi la lecture, et inversement.
 
 ## Côté client
 
-`crates/client/src/net.rs` : une tâche en boucle de reconnexion (pause de 2 s). `Rejected` est le seul cas sans nouvel essai. À `Welcome`, `GameState` est remis à zéro (le journal est conservé). Détails dans [client/carto-architecture.md](client/carto-architecture.md).
+`crates/client/src/net.rs` : une tâche en boucle de reconnexion (pause de 2 s). `Rejected` est le seul cas sans nouvel essai (y compris `replaced by new connection`). Une coupure détectée par le silence de 5 s ou le timeout de `connect` repart en reconnexion. À `Welcome`, `GameState` est remis à zéro (le journal est conservé). Détails dans [client/carto-architecture.md](client/carto-architecture.md).
 
 ## Versionnement
 
 > [!WARNING]
-> Tout changement incompatible de `ClientMsg`, `ServerMsg` ou de leurs types imbriqués incrémente `PROTOCOL_VERSION` (actuellement 1). Postcard n'a pas de champs nommés : l'ordre des variantes et des champs est le format.
+> Tout changement incompatible de `ClientMsg`, `ServerMsg` ou de leurs types imbriqués incrémente `PROTOCOL_VERSION` (actuellement 2). Postcard n'a pas de champs nommés : l'ordre des variantes et des champs est le format.
 
 - Ajouter une variante de message : à la **fin** de l'enum, puis incrémenter la version.
 - Contenu (`Tile`, `Biome`, `Species`, `Effect`) : ces enums transitent aussi sur le réseau (`ChunkData`, `Look`, `Effect`) et dans la sauvegarde. Ajouter les lignes en **fin de table**, jamais en milieu ni en suppression. Voir [guide-ajout-contenu.md](guide-ajout-contenu.md).
