@@ -8,9 +8,38 @@ pub mod setup;
 pub mod theme;
 
 use ratatui::Frame;
+use ratatui::symbols::border;
 use ratatui::text::Line;
+use ratatui::widgets::{Block, BorderType};
 
 use crate::app::App;
+use crate::config::GlyphSet;
+
+pub const ASCII_BORDER: border::Set = border::Set {
+    top_left: "+",
+    top_right: "+",
+    bottom_left: "+",
+    bottom_right: "+",
+    vertical_left: "|",
+    vertical_right: "|",
+    horizontal_top: "-",
+    horizontal_bottom: "-",
+};
+
+/// Cadre avec bordures `+-|` en ASCII, arrondies sinon.
+pub fn bordered(glyphs: GlyphSet) -> Block<'static> {
+    let block = Block::bordered();
+    if glyphs == GlyphSet::Ascii {
+        block.border_set(ASCII_BORDER)
+    } else {
+        block.border_type(BorderType::Rounded)
+    }
+}
+
+/// `ascii` si le jeu de glyphes est ASCII, `unicode` sinon (texte du chrome hors carte).
+pub fn pick<'a>(glyphs: GlyphSet, unicode: &'a str, ascii: &'a str) -> &'a str {
+    if glyphs == GlyphSet::Ascii { ascii } else { unicode }
+}
 
 pub fn draw(f: &mut Frame, app: &App) {
     if app.incognito {
