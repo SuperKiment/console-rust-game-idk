@@ -4,7 +4,7 @@ use std::collections::{HashMap, VecDeque};
 use std::time::{Duration, Instant, SystemTime};
 
 use idk_shared::content::{Biome, Effect, Tile};
-use idk_shared::geo::{ChunkPos, Pos};
+use idk_shared::geo::{ChunkPos, Dir, Pos};
 use idk_shared::protocol::{ChunkData, EntityId, EntityView, KEEP_CHUNKS, LogLine, ServerMsg};
 
 const LOG_SIZE: usize = 200;
@@ -22,6 +22,8 @@ pub fn unix_now() -> u64 {
 #[derive(Default)]
 pub struct GameState {
     pub me: Option<EntityId>,
+    /// Direction posée localement au dernier Move ; `None` tant qu'aucun Move depuis le Welcome.
+    local_facing: Option<Dir>,
     pub name: String,
     pub seed: u64,
     chunks: HashMap<ChunkPos, ChunkData>,
@@ -76,6 +78,16 @@ impl GameState {
 
     pub fn me(&self) -> Option<&EntityView> {
         self.entities.iter().find(|e| Some(e.id) == self.me)
+    }
+
+    /// Direction regardée : le dernier Move local prime sur le snapshot serveur (en retard).
+    /// Le serveur fixe `facing` à chaque Move, même bloqué ou en cooldown, donc pas de divergence.
+    pub fn facing(&self) -> Dir {
+        self.local_facing.or(self.me().map(|e| e.facing)).unwrap_or_default()
+    }
+
+    pub fn set_facing(&mut self, dir: Dir) {
+        self.local_facing = Some(dir);
     }
 
     pub fn my_pos(&self) -> Option<Pos> {
