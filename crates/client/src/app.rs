@@ -39,6 +39,22 @@ pub struct App {
     quit: bool,
 }
 
+impl App {
+    #[cfg(test)]
+    pub fn for_test(status: Status) -> Self {
+        Self {
+            config: Config::default(),
+            incognito: false,
+            state: GameState::default(),
+            mode: Mode::Play,
+            status,
+            started: Instant::now(),
+            net: mpsc::unbounded_channel().0,
+            quit: false,
+        }
+    }
+}
+
 pub async fn run(terminal: &mut DefaultTerminal, config: Config) -> std::io::Result<()> {
     let (events_tx, mut net_events) = mpsc::unbounded_channel();
     let net = net::spawn(config.server.clone(), config.name.clone(), events_tx);
@@ -80,7 +96,11 @@ impl App {
                 self.state.online.clear();
                 self.status = Status::Offline(reason);
             }
-            NetEvent::Rejected(reason) => self.status = Status::Rejected(reason),
+            NetEvent::Rejected(reason) => {
+                // Esc doit quitter, pas seulement fermer le chat
+                self.mode = Mode::Play;
+                self.status = Status::Rejected(reason);
+            }
         }
     }
 
@@ -130,5 +150,19 @@ impl App {
         if matches!(self.status, Status::Online) {
             let _ = self.net.send(msg);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejected_leaves_chat_mode() {
+        let mut app = App::for_test(Status::Connecting);
+        app.mode = Mode::Chat("salut".into());
+        app.on_net(NetEvent::Rejected("name taken".into()));
+        assert!(matches!(app.mode, Mode::Play));
+        assert!(matches!(app.status, Status::Rejected(_)));
     }
 }
