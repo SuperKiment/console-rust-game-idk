@@ -98,8 +98,7 @@ impl App {
                 if matches!(self.status, Status::Online) {
                     self.state.push_log(LogLine::new(LogKind::System, format!("Disconnected: {reason}")));
                 }
-                self.state.me = None;
-                self.state.online.clear();
+                self.state.disconnect();
                 self.status = Status::Offline(reason);
             }
             NetEvent::Rejected(reason) => {
@@ -149,6 +148,9 @@ impl App {
             Action::Interact => self.send(ClientMsg::Interact(facing)),
             Action::Build => self.send(ClientMsg::Build(facing)),
             Action::Break => self.send(ClientMsg::Break(facing)),
+            Action::Chat if !matches!(self.status, Status::Online) => {
+                self.state.push_log(LogLine::new(LogKind::System, "Not connected."));
+            }
             Action::Chat => self.mode = Mode::Chat(String::new()),
             Action::ToggleIncognito => self.incognito = !self.incognito,
             Action::Quit => self.quit = true,
@@ -174,6 +176,50 @@ mod tests {
         app.on_net(NetEvent::Rejected("name taken".into()));
         assert!(matches!(app.mode, Mode::Play));
         assert!(matches!(app.status, Status::Rejected(_)));
+    }
+
+    #[test]
+    fn disconnect_keeps_map_but_drops_me() {
+        use idk_shared::content::{Biome, Tile};
+        use idk_shared::geo::CHUNK_AREA;
+        use idk_shared::geo::Pos;
+        use idk_shared::protocol::{ChunkData, EntityView, Look, ServerMsg};
+        let mut app = App::for_test(Status::Online);
+        let now = Instant::now();
+        app.state.apply(ServerMsg::Welcome { id: 1, name: "a".into(), seed: 0 }, now);
+        let pos = Pos::new(3, 4);
+        let mut chunk = ChunkData {
+            pos: pos.chunk(),
+            tiles: vec![Tile::Grass; CHUNK_AREA],
+            biomes: vec![Biome::Plains; CHUNK_AREA],
+        };
+        chunk.tiles[pos.local_index()] = Tile::Wall;
+        app.state.apply(ServerMsg::Chunk(chunk), now);
+        app.state.apply(
+            ServerMsg::Entities(vec![EntityView {
+                id: 1,
+                pos,
+                facing: Dir::North,
+                look: Look::Player { name: "a".into(), color: 0 },
+            }]),
+            now,
+        );
+        app.on_net(NetEvent::Disconnected("gone".into()));
+        assert!(app.state.me.is_none());
+        assert!(app.state.is_offline());
+        assert_eq!(app.state.map_center(), Some(pos));
+        assert_eq!(app.state.tile(pos), Some(Tile::Wall));
+        assert!(app.state.entities.is_empty());
+    }
+
+    #[test]
+    fn chat_offline_stays_in_play_and_logs() {
+        let mut app = App::for_test(Status::Offline("gone".into()));
+        app.act(Action::Chat, KeyEvent::from(KeyCode::Null));
+        assert!(matches!(app.mode, Mode::Play));
+        assert!(
+            matches!(&app.state.log.back().unwrap().line, LogLine { text, .. } if text == "Not connected.")
+        );
     }
 
     #[test]
