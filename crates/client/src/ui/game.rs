@@ -17,6 +17,7 @@ use super::{bordered, pick};
 use crate::app::{App, Mode, Status};
 use crate::config::GlyphSet;
 use crate::input::BINDINGS;
+use crate::state::{shifted, utc_offset};
 
 const SIDEBAR: u16 = 32;
 const LOG_HEIGHT: u16 = 9;
@@ -204,8 +205,10 @@ fn draw_log(f: &mut Frame, app: &App, t: &Theme, area: Rect, block: Block) {
         .take(rows)
         .rev()
         .map(|e| {
-            let time =
-                Span::styled(format!("{} ", super::clock(e.time % 86_400)), Style::new().fg(paint(t.dim)));
+            let time = Span::styled(
+                format!("{} ", super::clock(shifted(e.time, utc_offset()) % 86_400)),
+                Style::new().fg(paint(t.dim)),
+            );
             let body = match &e.line.kind {
                 LogKind::Chat { from } => {
                     let color = PLAYER_COLORS[e.color as usize % PLAYER_COLORS.len()];

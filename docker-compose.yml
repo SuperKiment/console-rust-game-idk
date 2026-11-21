@@ -24,6 +24,8 @@ services:
     depends_on: [server]
     volumes:
       - client-config:/config
+      # Heure locale dans le journal et l'horloge incognito (fuseau de l'hôte, Linux et macOS).
+      - /etc/localtime:/etc/localtime:ro
 
 volumes:
   world:
