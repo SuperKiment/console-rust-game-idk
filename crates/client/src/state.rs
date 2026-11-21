@@ -22,6 +22,8 @@ pub fn unix_now() -> u64 {
 #[derive(Default)]
 pub struct GameState {
     pub me: Option<EntityId>,
+    /// Dernière position connue, gardée à la déconnexion pour dessiner la carte grisée.
+    last_pos: Option<Pos>,
     /// Direction posée localement au dernier Move ; `None` tant qu'aucun Move depuis le Welcome.
     local_facing: Option<Dir>,
     pub name: String,
@@ -67,6 +69,25 @@ impl GameState {
             ServerMsg::Rejected(_) => {}
         }
         self.effects.retain(|(_, _, until)| *until > now);
+    }
+
+    /// Connexion perdue : on garde chunks et position pour une carte grisée, sans entités ni effets.
+    pub fn disconnect(&mut self) {
+        self.last_pos = self.my_pos();
+        self.me = None;
+        self.entities.clear();
+        self.online.clear();
+        self.effects.clear();
+    }
+
+    /// Hors ligne = plus d'identité mais une position gardée (`None` avant le premier Welcome).
+    pub fn is_offline(&self) -> bool {
+        self.me.is_none() && self.last_pos.is_some()
+    }
+
+    /// Centre de la carte : ma position, sinon la dernière connue.
+    pub fn map_center(&self) -> Option<Pos> {
+        self.my_pos().or(self.last_pos)
     }
 
     pub fn push_log(&mut self, line: LogLine) {

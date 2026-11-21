@@ -79,7 +79,7 @@ stateDiagram-v2
 ```
 
 - Les touches envoyées pendant la coupure sont vidées avant de se reconnecter (`while out.try_recv().is_ok()`).
-- À `Disconnected`, `GameState.me` et `online` sont remis à vide ; la carte devient vide (`map::render` ne dessine rien sans `me`) sous le popup de statut. À `Welcome`, tout l'état est remplacé sauf le journal.
+- À `Disconnected`, `GameState::disconnect` garde les chunks et la dernière position connue, et vide `me`, `entities`, `online` et les effets ; `map::render` dessine alors la carte grisée (couleurs assombries, `DIM`, sans entités ni case visée) sous le popup de statut. Le chat ne s'ouvre pas hors ligne : le journal local reçoit « Not connected. ». À `Welcome`, tout l'état est remplacé sauf le journal.
 - Le statut passe à `Online` dès le premier message, `Welcome` inclus.
 - L'adresse serveur est normalisée (`config::normalize_server`, port `DEFAULT_PORT` ajouté s'il manque) à la sortie de l'assistant et au démarrage (`--server`, `IDK_SERVER`, fichier). Une adresse mal formée (`connect` en `InvalidInput`) donne `Rejected` ; un hôte inconnu (erreur DNS) reste en retry.
 
