@@ -51,24 +51,28 @@ impl ColorDepth {
     }
 }
 
-/// Nearest xterm-256 color (6x6x6 cube or grayscale ramp).
+/// Niveaux xterm de chaque composante du cube 6x6x6 (non linéaires).
+const CUBE_LEVELS: [u8; 6] = [0, 95, 135, 175, 215, 255];
+
+/// Distance euclidienne au carré entre deux couleurs RGB.
+fn dist2(a: [u8; 3], b: [u8; 3]) -> u32 {
+    a.iter().zip(b).map(|(&x, y)| (x as i32 - y as i32).pow(2) as u32).sum()
+}
+
+/// Nearest xterm-256 color (6x6x6 cube or grayscale ramp), by RGB distance.
 fn ansi256(r: u8, g: u8, b: u8) -> u8 {
-    let level = |v: u8| ((v as u16 * 5 + 127) / 255) as u8;
-    let cube = 16 + 36 * level(r) + 6 * level(g) + level(b);
-    let (max, min) = (r.max(g).max(b), r.min(g).min(b));
-    if max - min < 12 {
-        // Near-gray: the 24-step ramp is finer than the cube's diagonal.
-        let avg = (r as u16 + g as u16 + b as u16) / 3;
-        if avg < 8 {
-            16
-        } else if avg > 238 {
-            231
-        } else {
-            232 + ((avg - 8) / 10) as u8
-        }
-    } else {
-        cube
-    }
+    let rgb = [r, g, b];
+    // Niveau du cube le plus proche, par composante.
+    let nearest =
+        |v: u8| -> usize { (0..6).min_by_key(|&i| (v as i32 - CUBE_LEVELS[i] as i32).abs()).unwrap_or(0) };
+    let (ri, gi, bi) = (nearest(r), nearest(g), nearest(b));
+    let cube_rgb = [CUBE_LEVELS[ri], CUBE_LEVELS[gi], CUBE_LEVELS[bi]];
+    let cube_idx = 16 + 36 * ri + 6 * gi + bi;
+    // Rampe de gris 232..=255 : valeur = 8 + 10 * i.
+    let avg = (r as u16 + g as u16 + b as u16) / 3;
+    let gi = ((avg.saturating_sub(3)) / 10).min(23) as usize;
+    let gray = (8 + 10 * gi) as u8;
+    if dist2(rgb, [gray; 3]) < dist2(rgb, cube_rgb) { (232 + gi) as u8 } else { cube_idx as u8 }
 }
 
 /// `c` moved toward white by `t` (0..1).
@@ -105,5 +109,16 @@ mod tests {
         assert_eq!(ansi256(255, 0, 0), 196);
         assert_eq!(ansi256(0, 0, 0), 16);
         assert_eq!(ansi256(128, 128, 128), 244);
+        assert_eq!(ansi256(255, 255, 255), 231);
+        // Exact cube color (95,135,175) = 16 + 36*1 + 6*2 + 3.
+        assert_eq!(ansi256(95, 135, 175), 67);
+    }
+
+    #[test]
+    fn ansi256_dark_backgrounds_stay_dark() {
+        // Plains: ancien résultat 22 = (0,95,0), bien trop clair.
+        assert_eq!(ansi256(20, 36, 18), 234);
+        // Plus de gris cube (95,95,95) pour un fond très sombre.
+        assert!(ansi256(30, 30, 30) >= 232);
     }
 }

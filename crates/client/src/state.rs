@@ -4,7 +4,7 @@ use std::collections::{HashMap, VecDeque};
 use std::time::{Duration, Instant, SystemTime};
 
 use idk_shared::content::{Biome, Effect, Tile};
-use idk_shared::geo::{ChunkPos, Pos};
+use idk_shared::geo::{ChunkPos, Dir, Pos};
 use idk_shared::protocol::{ChunkData, EntityId, EntityView, KEEP_CHUNKS, LogLine, ServerMsg};
 
 const LOG_SIZE: usize = 200;
@@ -22,6 +22,10 @@ pub fn unix_now() -> u64 {
 #[derive(Default)]
 pub struct GameState {
     pub me: Option<EntityId>,
+    /// Dernière position connue, gardée à la déconnexion pour dessiner la carte grisée.
+    last_pos: Option<Pos>,
+    /// Direction posée localement au dernier Move ; `None` tant qu'aucun Move depuis le Welcome.
+    local_facing: Option<Dir>,
     pub name: String,
     pub seed: u64,
     chunks: HashMap<ChunkPos, ChunkData>,
@@ -67,6 +71,25 @@ impl GameState {
         self.effects.retain(|(_, _, until)| *until > now);
     }
 
+    /// Connexion perdue : on garde chunks et position pour une carte grisée, sans entités ni effets.
+    pub fn disconnect(&mut self) {
+        self.last_pos = self.my_pos();
+        self.me = None;
+        self.entities.clear();
+        self.online.clear();
+        self.effects.clear();
+    }
+
+    /// Hors ligne = plus d'identité mais une position gardée (`None` avant le premier Welcome).
+    pub fn is_offline(&self) -> bool {
+        self.me.is_none() && self.last_pos.is_some()
+    }
+
+    /// Centre de la carte : ma position, sinon la dernière connue.
+    pub fn map_center(&self) -> Option<Pos> {
+        self.my_pos().or(self.last_pos)
+    }
+
     pub fn push_log(&mut self, line: LogLine) {
         self.log.push_back(LogEntry { time: unix_now(), line });
         if self.log.len() > LOG_SIZE {
@@ -76,6 +99,16 @@ impl GameState {
 
     pub fn me(&self) -> Option<&EntityView> {
         self.entities.iter().find(|e| Some(e.id) == self.me)
+    }
+
+    /// Direction regardée : le dernier Move local prime sur le snapshot serveur (en retard).
+    /// Le serveur fixe `facing` à chaque Move, même bloqué ou en cooldown, donc pas de divergence.
+    pub fn facing(&self) -> Dir {
+        self.local_facing.or(self.me().map(|e| e.facing)).unwrap_or_default()
+    }
+
+    pub fn set_facing(&mut self, dir: Dir) {
+        self.local_facing = Some(dir);
     }
 
     pub fn my_pos(&self) -> Option<Pos> {

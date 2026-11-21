@@ -76,12 +76,39 @@ pub fn normalize_server(input: &str) -> String {
     }
 }
 
-/// The saved config, or `None` on first launch.
-pub fn load() -> io::Result<Option<Config>> {
-    match std::fs::read_to_string(path()) {
-        Ok(s) => toml::from_str(&s).map(Some).map_err(io::Error::other),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(e),
+/// Parse le contenu du fichier. `None` = premier lancement : fichier vide ou sans `name`.
+fn parse(s: &str) -> Result<Option<Config>, toml::de::Error> {
+    let table: toml::Table = s.parse()?;
+    if !table.contains_key("name") {
+        return Ok(None);
+    }
+    table.try_into().map(Some)
+}
+
+/// The saved config, or `None` on first launch. Un fichier illisible ou invalide est
+/// signalé sur stderr (avant l'init du terminal) puis renommé en `.bak` : `None`, donc
+/// l'assistant se lance et réécrit un fichier propre.
+pub fn load() -> Option<Config> {
+    let p = path();
+    let text = match std::fs::read_to_string(&p) {
+        Ok(s) => s,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return None,
+        Err(e) => {
+            eprintln!("Cannot read config ({}): {e}", p.display());
+            return None;
+        }
+    };
+    match parse(&text) {
+        Ok(c) => c,
+        Err(e) => {
+            let bak = p.with_extension("toml.bak");
+            eprintln!("Invalid config ({}):\n{e}", p.display());
+            match std::fs::rename(&p, &bak) {
+                Ok(()) => eprintln!("Old file kept as {}", bak.display()),
+                Err(e) => eprintln!("Cannot rename to .bak: {e}"),
+            }
+            None
+        }
     }
 }
 
@@ -107,6 +134,16 @@ mod tests {
         assert_eq!(n("[::1]"), "[::1]:7777");
         assert_eq!(n("[::1]:9"), "[::1]:9");
         assert_eq!(n("::1"), "[::1]:7777");
+    }
+
+    #[test]
+    fn parse_cases() {
+        assert!(parse("name = \"x").is_err());
+        assert!(parse("name = \"x\"\nglyphs = \"emoji\"").is_err());
+        assert_eq!(parse("").unwrap(), None);
+        assert_eq!(parse("  \n").unwrap(), None);
+        assert_eq!(parse("incognito = true").unwrap(), None);
+        assert_eq!(parse("name = \"bob\"").unwrap().unwrap().name, "bob");
     }
 
     #[test]

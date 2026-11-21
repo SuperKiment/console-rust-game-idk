@@ -27,11 +27,13 @@ pub fn origin(area: Rect, glyphs: GlyphSet, center: Pos) -> Pos {
 }
 
 pub fn render(buf: &mut Buffer, area: Rect, state: &GameState, s: &MapStyle, now: Instant) {
-    let Some(me) = state.me() else { return };
+    let Some(center) = state.map_center() else { return };
+    // Hors ligne : carte figée et grisée, sans entités, effets ni case visée.
+    let offline = state.is_offline();
     let tw = s.glyphs.tile_width();
-    let o = origin(area, s.glyphs, me.pos);
-    let facing = me.pos.step(me.facing);
-    let paint = |c: Rgb| s.colors.paint(c);
+    let o = origin(area, s.glyphs, center);
+    let facing = center.step(state.facing());
+    let paint = |c: Rgb| s.colors.paint(if offline { darken(c) } else { c });
     let mut sym = [0u8; 8];
 
     for row in 0..area.height {
@@ -47,6 +49,7 @@ pub fn render(buf: &mut Buffer, area: Rect, state: &GameState, s: &MapStyle, now
             let def = tile.def();
             let mut style = Style::new();
             let mut ground = false;
+            // Hors ligne, entités et effets sont vidés (`GameState::disconnect`) : seules les tuiles restent.
             let mut text = if let Some(effect) = state.effect_at(p, now) {
                 let d = effect.def();
                 style = style.fg(paint(d.fg)).add_modifier(Modifier::BOLD);
@@ -68,9 +71,12 @@ pub fn render(buf: &mut Buffer, area: Rect, state: &GameState, s: &MapStyle, now
                 style = style.fg(paint(def.fg));
                 s.glyphs.symbol(&def.glyph, &mut sym)
             };
+            if offline {
+                style = style.add_modifier(Modifier::DIM);
+            }
             if s.theme.map_colors {
                 let ground = def.bg.or_else(|| state.biome(p).map(|b| b.def().bg)).unwrap_or(s.theme.unknown);
-                let bg = if p == facing { lighten(ground, 0.22) } else { ground };
+                let bg = if p == facing && !offline { lighten(ground, 0.22) } else { ground };
                 style = style.bg(paint(bg));
             } else {
                 // Monochrome: open ground is blank (sparse like a text file), the rest is plain text.
@@ -78,13 +84,18 @@ pub fn render(buf: &mut Buffer, area: Rect, state: &GameState, s: &MapStyle, now
                 if ground {
                     text = " ";
                 }
-                if p == facing {
+                if p == facing && !offline {
                     style = style.add_modifier(Modifier::UNDERLINED);
                 }
             }
             buf.set_stringn(x, y, text, tw as usize, style);
         }
     }
+}
+
+/// Couleur atténuée pour la carte hors ligne.
+fn darken(Rgb(r, g, b): Rgb) -> Rgb {
+    Rgb(r / 2, g / 2, b / 2)
 }
 
 fn entity_look(e: &EntityView) -> (&'static idk_shared::content::Glyph, Rgb) {

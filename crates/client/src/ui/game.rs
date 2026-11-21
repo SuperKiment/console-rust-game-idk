@@ -59,7 +59,7 @@ pub fn draw(f: &mut Frame, app: &App) {
 
     let me_lines = match s.me() {
         Some(me) => {
-            let facing = me.pos.step(me.facing);
+            let facing = me.pos.step(s.facing());
             let faced = s
                 .entity_at(facing)
                 .map(|e| match &e.look {
@@ -72,7 +72,7 @@ pub fn draw(f: &mut Frame, app: &App) {
                 kv("name", s.name.clone()),
                 kv("pos", format!("{}, {}", me.pos.x, me.pos.y)),
                 kv("biome", s.biome(me.pos).map(|b| b.def().name).unwrap_or("?").to_string()),
-                kv("facing", format!("{faced} ({})", me.facing.name())),
+                kv("facing", format!("{faced} ({})", s.facing().name())),
             ]
         }
         None => vec![Line::styled("not in the world yet", dim)],
@@ -188,11 +188,17 @@ fn draw_log(f: &mut Frame, app: &App, t: &Theme, area: Rect, block: Block) {
         .collect();
     let [log_area, input_area] =
         Layout::vertical([Constraint::Min(0), Constraint::Length(input_rows)]).areas(inner);
-    f.render_widget(Paragraph::new(lines), log_area);
+    // Retour à la ligne, puis défilement pour garder les lignes les plus récentes visibles
+    let log_text = Paragraph::new(lines).wrap(Wrap { trim: false });
+    let hidden = log_text.line_count(log_area.width).saturating_sub(log_area.height as usize);
+    f.render_widget(log_text.scroll((hidden.min(u16::MAX as usize) as u16, 0)), log_area);
     if let Mode::Chat(input) = &app.mode {
         let line = Line::from(vec![
             Span::styled("> ", Style::new().fg(paint(t.accent)).bold()),
-            Span::styled(input.clone(), Style::new().fg(paint(t.text))),
+            Span::styled(
+                super::tail_fit(input, (input_area.width as usize).saturating_sub(3)),
+                Style::new().fg(paint(t.text)),
+            ),
             Span::styled("█", Style::new().fg(paint(t.accent))),
         ]);
         f.render_widget(Paragraph::new(line), input_area);
@@ -237,5 +243,33 @@ mod tests {
         term.draw(|f| draw_status(f, &app, &NORMAL, f.area())).unwrap();
         let screen = term.backend().to_string();
         assert!(screen.contains("retrying"), "{screen}");
+    }
+
+    fn screen(app: &App) -> String {
+        let mut term = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        term.draw(|f| draw(f, app)).unwrap();
+        term.backend().to_string()
+    }
+
+    #[test]
+    fn long_chat_input_keeps_end_and_cursor() {
+        let mut app = App::for_test(Status::Online);
+        app.mode = Mode::Chat(format!("{}END", "x".repeat(150)));
+        let s = screen(&app);
+        assert!(s.contains("END█"), "{s}");
+    }
+
+    #[test]
+    fn long_log_message_wraps_and_stays_at_bottom() {
+        use idk_shared::protocol::LogLine;
+        let mut app = App::for_test(Status::Online);
+        let line = |text: String| LogLine { kind: LogKind::Info, text };
+        app.state
+            .log
+            .push_back(crate::state::LogEntry { time: 0, line: line(format!("{}FINMSG", "y".repeat(200))) });
+        app.state.log.push_back(crate::state::LogEntry { time: 0, line: line("derniere".into()) });
+        let s = screen(&app);
+        assert!(s.contains("FINMSG"), "{s}");
+        assert!(s.contains("derniere"), "{s}");
     }
 }

@@ -52,12 +52,16 @@ fn act(game: &mut Game, id: EntityId, players: &[(String, Pos)], now: Instant) {
             pos.dir_to(o)
         }
         (Some(_), _) => wander(game, 0.85),
-        (None, Some(n)) if n.dist(pos) <= ai.flee_radius => {
+        // rayon 0 = jamais, même joueur sur la tuile de l'animal (les joueurs le traversent)
+        (None, Some(n)) if ai.flee_radius > 0 && n.dist(pos) <= ai.flee_radius => {
             delay = ai.step_ms / 2;
             n.dir_to(pos).or_else(|| wander(game, 0.0))
         }
         (None, Some(n))
-            if n.dist(pos) <= ai.curious_radius && n.dist(pos) > FOLLOW_DIST && game.rng.chance(0.5) =>
+            if ai.curious_radius > 0
+                && n.dist(pos) <= ai.curious_radius
+                && n.dist(pos) > FOLLOW_DIST
+                && game.rng.chance(0.5) =>
         {
             pos.dir_to(n)
         }
@@ -192,6 +196,18 @@ mod tests {
             g.world.set_tile(pos.step(Dir::West), Tile::Wall);
             try_step(&mut g, cow, Dir::North);
             assert_eq!(g.animals[&cow].pos, pos.step(Dir::East), "seed {seed_offset}");
+        }
+    }
+
+    #[test]
+    fn zero_flee_radius_never_flees() {
+        for seed in 0..20 {
+            let (mut g, cow, _rx, now) = setup(Species::Cow, (0, 0));
+            g.rng = crate::rng::Rng::new(seed);
+            step(&mut g, now);
+            // pas normal ≥ 900 ms × 0,75 ; une fuite le diviserait par 2
+            let delay = g.animals[&cow].next_step - now;
+            assert!(delay >= Duration::from_millis(675), "seed {seed}: {delay:?}");
         }
     }
 

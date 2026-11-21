@@ -36,12 +36,15 @@ pub struct App {
     pub incognito: bool,
     pub started: Instant,
     net: UnboundedSender<ClientMsg>,
+    #[cfg(test)]
+    sent: mpsc::UnboundedReceiver<ClientMsg>,
     quit: bool,
 }
 
 impl App {
     #[cfg(test)]
     pub fn for_test(status: Status) -> Self {
+        let (net, sent) = mpsc::unbounded_channel();
         Self {
             config: Config::default(),
             incognito: false,
@@ -49,7 +52,8 @@ impl App {
             mode: Mode::Play,
             status,
             started: Instant::now(),
-            net: mpsc::unbounded_channel().0,
+            net,
+            sent,
             quit: false,
         }
     }
@@ -66,6 +70,8 @@ pub async fn run(terminal: &mut DefaultTerminal, config: Config) -> std::io::Res
         status: Status::Connecting,
         started: Instant::now(),
         net,
+        #[cfg(test)]
+        sent: mpsc::unbounded_channel().1,
         quit: false,
     };
     let mut input = EventStream::new();
@@ -92,8 +98,7 @@ impl App {
                 if matches!(self.status, Status::Online) {
                     self.state.push_log(LogLine::new(LogKind::System, format!("Disconnected: {reason}")));
                 }
-                self.state.me = None;
-                self.state.online.clear();
+                self.state.disconnect();
                 self.status = Status::Offline(reason);
             }
             NetEvent::Rejected(reason) => {
@@ -134,12 +139,18 @@ impl App {
     }
 
     fn act(&mut self, action: Action, _key: KeyEvent) {
-        let facing = self.state.me().map(|e| e.facing).unwrap_or_default();
+        let facing = self.state.facing();
         match action {
-            Action::Move(dir) => self.send(ClientMsg::Move(dir)),
+            Action::Move(dir) => {
+                self.state.set_facing(dir);
+                self.send(ClientMsg::Move(dir));
+            }
             Action::Interact => self.send(ClientMsg::Interact(facing)),
             Action::Build => self.send(ClientMsg::Build(facing)),
             Action::Break => self.send(ClientMsg::Break(facing)),
+            Action::Chat if !matches!(self.status, Status::Online) => {
+                self.state.push_log(LogLine::new(LogKind::System, "Not connected."));
+            }
             Action::Chat => self.mode = Mode::Chat(String::new()),
             Action::ToggleIncognito => self.incognito = !self.incognito,
             Action::Quit => self.quit = true,
@@ -156,6 +167,7 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use idk_shared::geo::Dir;
 
     #[test]
     fn rejected_leaves_chat_mode() {
@@ -164,5 +176,60 @@ mod tests {
         app.on_net(NetEvent::Rejected("name taken".into()));
         assert!(matches!(app.mode, Mode::Play));
         assert!(matches!(app.status, Status::Rejected(_)));
+    }
+
+    #[test]
+    fn disconnect_keeps_map_but_drops_me() {
+        use idk_shared::content::{Biome, Tile};
+        use idk_shared::geo::CHUNK_AREA;
+        use idk_shared::geo::Pos;
+        use idk_shared::protocol::{ChunkData, EntityView, Look, ServerMsg};
+        let mut app = App::for_test(Status::Online);
+        let now = Instant::now();
+        app.state.apply(ServerMsg::Welcome { id: 1, name: "a".into(), seed: 0 }, now);
+        let pos = Pos::new(3, 4);
+        let mut chunk = ChunkData {
+            pos: pos.chunk(),
+            tiles: vec![Tile::Grass; CHUNK_AREA],
+            biomes: vec![Biome::Plains; CHUNK_AREA],
+        };
+        chunk.tiles[pos.local_index()] = Tile::Wall;
+        app.state.apply(ServerMsg::Chunk(chunk), now);
+        app.state.apply(
+            ServerMsg::Entities(vec![EntityView {
+                id: 1,
+                pos,
+                facing: Dir::North,
+                look: Look::Player { name: "a".into(), color: 0 },
+            }]),
+            now,
+        );
+        app.on_net(NetEvent::Disconnected("gone".into()));
+        assert!(app.state.me.is_none());
+        assert!(app.state.is_offline());
+        assert_eq!(app.state.map_center(), Some(pos));
+        assert_eq!(app.state.tile(pos), Some(Tile::Wall));
+        assert!(app.state.entities.is_empty());
+    }
+
+    #[test]
+    fn chat_offline_stays_in_play_and_logs() {
+        let mut app = App::for_test(Status::Offline("gone".into()));
+        app.act(Action::Chat, KeyEvent::from(KeyCode::Null));
+        assert!(matches!(app.mode, Mode::Play));
+        assert!(
+            matches!(&app.state.log.back().unwrap().line, LogLine { text, .. } if text == "Not connected.")
+        );
+    }
+
+    #[test]
+    fn build_uses_local_facing_after_move() {
+        let mut app = App::for_test(Status::Online);
+        app.act(Action::Move(Dir::East), KeyEvent::from(KeyCode::Null));
+        app.act(Action::Move(Dir::North), KeyEvent::from(KeyCode::Null));
+        app.act(Action::Build, KeyEvent::from(KeyCode::Null));
+        assert_eq!(app.sent.try_recv().unwrap(), ClientMsg::Move(Dir::East));
+        assert_eq!(app.sent.try_recv().unwrap(), ClientMsg::Move(Dir::North));
+        assert_eq!(app.sent.try_recv().unwrap(), ClientMsg::Build(Dir::North));
     }
 }
