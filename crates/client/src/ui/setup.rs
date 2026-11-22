@@ -54,6 +54,8 @@ pub fn draw(f: &mut Frame, w: &Wizard) {
     };
 
     let mut lines: Vec<Line> = Vec::new();
+    // Lignes d'aperçu de carte : retirées si le terminal est trop bas, la ligne de touches reste visible.
+    let mut previews: Vec<std::ops::Range<usize>> = Vec::new();
     match w.step {
         Step::Unicode => {
             lines.push(Line::styled("Unicode symbols", accent));
@@ -82,7 +84,9 @@ pub fn draw(f: &mut Frame, w: &Wizard) {
             ] {
                 lines.push(Line::from(""));
                 lines.push(Line::styled(label, text.bold()));
+                let start = lines.len();
                 lines.extend(preview(set, w.colors));
+                previews.push(start..lines.len());
             }
             lines.extend(ask("", "(1) Unicode   (2) Wide"));
         }
@@ -125,10 +129,17 @@ pub fn draw(f: &mut Frame, w: &Wizard) {
             ] {
                 lines.push(Line::from(vec![Span::styled(format!("{k:<11}"), dim), Span::styled(v, text)]));
             }
+            let start = lines.len();
             lines.push(Line::from(""));
             lines.extend(preview(c.glyphs, c.colors));
+            previews.push(start..lines.len());
             lines.push(Line::from(""));
             lines.push(Line::styled("Enter: save", accent));
+        }
+    }
+    if lines.len() > body.height as usize {
+        for r in previews.into_iter().rev() {
+            lines.drain(r);
         }
     }
     f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), body);

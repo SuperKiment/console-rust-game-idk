@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use idk_shared::content::{Effect, Species, Tile, player_color_index};
 use idk_shared::geo::{CHUNK_SIZE, ChunkPos, Dir, Pos};
 use idk_shared::protocol::{
-    ClientMsg, EntityId, EntityView, KEEP_CHUNKS, LogKind, LogLine, Look, MAX_NAME, ServerMsg, VIEW_CHUNKS,
+    ClientMsg, EntityId, EntityView, KEEP_CHUNKS, LogKind, LogLine, Look, MAX_CHAT, ServerMsg, VIEW_CHUNKS,
 };
 use tokio::sync::mpsc::Sender;
 use tokio::sync::mpsc::error::TrySendError;
@@ -21,7 +21,6 @@ pub type ConnId = u64;
 pub const TICK: Duration = Duration::from_millis(50);
 const MOVE_COOLDOWN: Duration = Duration::from_millis(90);
 pub const VIEW_TILES: i32 = VIEW_CHUNKS * CHUNK_SIZE;
-const MAX_CHAT: usize = 240;
 /// Taille de la file d'envoi par client (messages). Pleine = client trop lent ou gelé : déconnecté.
 pub const SEND_QUEUE: usize = 256;
 /// Rayon maximal (en tuiles) de la recherche d'une tuile praticable à la connexion.
@@ -139,7 +138,7 @@ impl Game {
     // --- connections ---
 
     fn join(&mut self, conn: ConnId, raw_name: &str, tx: Sender<ServerMsg>, now: Instant) {
-        let name = clean_name(raw_name);
+        let name = idk_shared::protocol::clean_name(raw_name);
         // Même nom déjà connecté (typiquement une session fantôme après coupure réseau) :
         // la nouvelle connexion remplace l'ancienne et reprend son identité, sa position et ses animaux.
         let old = self.conn_of(&name).and_then(|c| self.players.remove(&c));
@@ -470,15 +469,6 @@ fn clean_chat(raw: &str) -> Option<String> {
     if text.is_empty() { None } else { Some(text.to_string()) }
 }
 
-/// Nom d'affichage : sans caractères de contrôle, sans espaces aux bords, au plus `MAX_NAME` caractères.
-fn clean_name(raw: &str) -> String {
-    let filtered: String = raw.chars().filter(|c| !c.is_control()).collect();
-    let name: String = filtered.trim().chars().take(MAX_NAME).collect();
-    // Le `take` peut laisser un espace en fin de nom (ex. "abc def" coupé après l'espace).
-    let name = name.trim_end();
-    if name.is_empty() { "player".to_string() } else { name.to_string() }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -580,15 +570,6 @@ mod tests {
         assert_eq!(clean_chat("hi \x07").as_deref(), Some("hi"));
         assert_eq!(clean_chat("\x07\x07 "), None);
         assert_eq!(clean_chat(&"é".repeat(300)).unwrap().chars().count(), MAX_CHAT);
-    }
-
-    #[test]
-    fn names_are_cleaned() {
-        assert_eq!(clean_name("  bob "), "bob");
-        assert_eq!(clean_name("a "), "a");
-        assert_eq!(clean_name(" "), "player");
-        assert_eq!(clean_name("abcdefghijklmno pqrst"), "abcdefghijklmno");
-        assert_eq!(clean_name(&"é".repeat(40)).chars().count(), MAX_NAME);
     }
 
     #[test]

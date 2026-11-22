@@ -81,6 +81,7 @@ impl GameState {
                 self.effects.push((pos, effect, until));
             }
             ServerMsg::Online(list) => self.online = list,
+            // Inatteignable : `net::session` intercepte `Rejected` avant l'état.
             ServerMsg::Rejected(_) => {}
         }
         self.effects.retain(|(_, _, until)| *until > now);

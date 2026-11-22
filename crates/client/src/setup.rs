@@ -66,8 +66,8 @@ impl Wizard {
     }
 
     /// Chosen name, or the default when nothing was typed.
-    pub fn name(&self) -> &str {
-        non_empty_or(&self.name_input, &self.base.name)
+    pub fn name(&self) -> String {
+        idk_shared::protocol::clean_name(non_empty_or(&self.name_input, &self.base.name))
     }
 
     pub fn server(&self) -> &str {
@@ -77,7 +77,7 @@ impl Wizard {
     /// The config the answers so far describe.
     pub fn config(&self) -> Config {
         Config {
-            name: self.name().to_string(),
+            name: self.name(),
             server: crate::config::normalize_server(self.server()),
             glyphs: self.glyphs,
             colors: self.colors,
@@ -293,9 +293,9 @@ mod tests {
         assert_eq!(w.name(), "bob"); // default while nothing typed
         press(&mut w, "al");
         key(&mut w, KeyCode::Backspace);
-        assert_eq!((w.step, w.name()), (Step::Name, "a"));
+        assert_eq!((w.step, w.name().as_str()), (Step::Name, "a"));
         key(&mut w, KeyCode::Backspace);
-        assert_eq!((w.step, w.name()), (Step::Name, "bob"));
+        assert_eq!((w.step, w.name().as_str()), (Step::Name, "bob"));
         key(&mut w, KeyCode::Backspace); // empty input: previous step
         assert_eq!(w.step, Step::Colors);
     }
