@@ -6,14 +6,14 @@
 | 52-65 | Boucle principale |
 | 66-87 | Connexion et reconnexion |
 | 88-102 | GameState |
-| 103-116 | Layouts |
-| 117-135 | Chaîne glyphes et couleurs |
-| 136-156 | Assistant de configuration |
-| 157-162 | Table BINDINGS |
-| 163-167 | Docs liées |
+| 103-118 | Layouts |
+| 119-139 | Chaîne glyphes et couleurs |
+| 140-160 | Assistant de configuration |
+| 161-166 | Table BINDINGS |
+| 167-171 | Docs liées |
 # Client : architecture
 
-> Vérifié le 2026-11-20 depuis `crates/client/src/` (`main.rs`, `app.rs`, `net.rs`, `state.rs`, `input.rs`, `config.rs`, `setup.rs`, `ui/`). Fiche : [vue-ensemble.md](vue-ensemble.md).
+> Vérifié le 2026-11-22 depuis `crates/client/src/` (`main.rs`, `app.rs`, `net.rs`, `state.rs`, `input.rs`, `config.rs`, `setup.rs`, `ui/`). Fiche : [vue-ensemble.md](vue-ensemble.md).
 
 ## Modules
 
@@ -47,7 +47,7 @@ flowchart TD
     O --> R["app::run"]
 ```
 
-Les surcharges de la ligne de commande ne durent que la session et ne sont jamais écrites dans le fichier (`incognito` est combiné par OU avec la config).
+Les surcharges de la ligne de commande ne durent que la session et ne sont jamais écrites dans le fichier (`incognito` est combiné par OU avec la config). Si la sauvegarde de la config échoue (volume en lecture seule), le jeu continue avec la config en mémoire et un avertissement s'affiche sur stderr après la restauration du terminal. Un fichier de config invalide est renommé en `.bak` (message sur stderr) avant de relancer l'assistant. `main()` active aussi le collage bracketed (`EnableBracketedPaste`).
 
 ## Boucle principale
 
@@ -61,7 +61,7 @@ Les surcharges de la ligne de commande ne durent que la session et ne sont jamai
 
 Aucune simulation côté client : l'écran n'est que le reflet du dernier état reçu. Les actions ne sont envoyées que si `Status::Online`.
 
-Modes de saisie : `Mode::Play` (touches via `BINDINGS`) et `Mode::Chat(String)` (Entrée envoie, Échap annule, 240 caractères max).
+Modes de saisie : `Mode::Play` (touches via `BINDINGS`) et `Mode::Chat(String)` (Entrée envoie, Échap annule, 240 caractères max ; Ctrl/Alt/Super + touche ignorés sauf Ctrl+C qui quitte ; un collage devient une ligne unique, retours à la ligne remplacés par des espaces, jamais envoyée toute seule). Esc en jeu (`ConfirmQuit`) : le premier Esc journalise « Press Esc again to quit. », un second dans les 2 s (`QUIT_CONFIRM`) quitte ; statut `Rejected` : un seul Esc quitte. Ctrl+C quitte tout de suite.
 
 ## Connexion et reconnexion
 
@@ -81,7 +81,7 @@ stateDiagram-v2
 - Keepalive : `ClientMsg::Ping` toutes les 5 s (`PING_EVERY`), sinon le serveur ferme la session après 15 s de silence. Détection d'un serveur gelé ou d'une coupure sans fermeture TCP : si aucun message serveur n'arrive pendant 5 s (`SILENCE`, le serveur émet `Entities` à 20 Hz), la session échoue (`Disconnected: no data from server for 5 s`) et la reconnexion démarre. L'échéance n'est repoussée que par les messages du serveur, pas par les touches du joueur. `connect` a un timeout de 5 s (`CONNECT_TIMEOUT`).
 - Reconnexion sous le même nom : le serveur remplace l'éventuelle session fantôme et rend la position, l'orientation et les animaux apprivoisés. Si c'est cette session-ci qui est remplacée (autre client avec le même nom), elle reçoit `Rejected("replaced by new connection")` : statut `Rejected`, pas de nouvel essai, donc pas de vol de session en boucle.
 - Les touches envoyées pendant la coupure sont vidées avant de se reconnecter (`while out.try_recv().is_ok()`).
-- À `Disconnected`, `GameState::disconnect` garde les chunks et la dernière position connue, et vide `me`, `entities`, `online` et les effets ; `map::render` dessine alors la carte grisée (couleurs assombries, `DIM`, sans entités ni case visée) sous le popup de statut. Le chat ne s'ouvre pas hors ligne : le journal local reçoit « Not connected. ». À `Welcome`, tout l'état est remplacé sauf le journal.
+- À `Disconnected`, `GameState::disconnect` garde les chunks et la dernière position connue, et vide `me`, `entities`, `online` et les effets (la ligne « Disconnected: … » n'est journalisée que si le statut était `Online`) ; `map::render` dessine alors la carte grisée (couleurs assombries, `DIM`, sans entités ni case visée) sous le popup de statut. Le chat ne s'ouvre pas hors ligne : le journal local reçoit « Not connected. ». À `Welcome`, tout l'état est remplacé sauf le journal.
 - Le statut passe à `Online` dès le premier message, `Welcome` inclus.
 - L'adresse serveur est normalisée (`config::normalize_server`, port `DEFAULT_PORT` ajouté s'il manque) à la sortie de l'assistant et au démarrage (`--server`, `IDK_SERVER`, fichier). Une adresse mal formée (`connect` en `InvalidInput`) donne `Rejected` ; un hôte inconnu (erreur DNS) reste en retry.
 
@@ -108,9 +108,11 @@ stateDiagram-v2
 |---|---|---|
 | Carte | couleurs de la table de contenu, jeu de glyphes de la config | monochrome gris, **toujours ASCII** (`GlyphSet::Ascii`) ; le sol praticable est laissé vide |
 | Cadre | panneaux `you`, `online`, `nearby`, `keys`, journal (au plus 9 lignes de haut, bordures comprises, réduit à un quart de la hauteur du terminal avec un minimum de 4 ; sidebar : `you` en priorité, puis `keys` entier ou masqué, puis `online` et `nearby` selon la place restante ; la graine s’affiche en hex court dans le titre de la carte seulement si la carte fait 40 colonnes ou plus) | barre d'onglets (`<biome>.rs`, `world.log`, `Cargo.toml`), gouttière de numéros de ligne = coordonnée y, panneau `OUTPUT` (8 lignes max en-tête compris, au plus un tiers de l'écran) |
-| Journal | heure, texte coloré par type | format de logs serveur : `ISO8601 NIVEAU message` (`Animal` = DEBUG, départs et déconnexions = WARN) |
-| Barre d'état | popup centrée si non connecté | `NORMAL` / `INSERT` façon vim, `Ln y, Col x`, chat saisi comme ligne de commande `:` |
+| Journal | heure locale `HH:MM:SS`, texte coloré par type, retour à la ligne des longs messages, saisie du chat défilée (fin du texte visible) | format de logs serveur : `ISO8601 NIVEAU message`, ISO8601 en heure locale avec fuseau (`Z` ou `±HH:MM`) ; `Animal` = DEBUG, départs (« left the world. ») et déconnexions (« Disconnected… ») = WARN, le reste INFO ; chat préfixé `[chat] <nom>` |
+| Barre d'état | popup centrée si non connecté | `NORMAL` / `INSERT` façon vim, `Ln y, Col x`, chat saisi comme ligne de commande `:`, `N users` et heure locale `HH:MM` à droite ; l'état de connexion s'affiche dans la barre (pas de popup) |
 | Aide des touches | panneau `keys`, généré depuis `BINDINGS` | aucune |
+
+Fuseau : `state::utc_offset` (via `chrono`, lu une fois ; en docker, `/etc/localtime` est monté par `docker-compose.yml`). Le jeu de glyphes de la config ne change que les symboles du chrome (voir « Chaîne glyphes et couleurs »).
 
 Point clé : le thème `INCOGNITO` (`ui/theme.rs`) est sans couleur de carte (`map_colors: false`), pour que l'écran ressemble à un éditeur à côté d'un journal.
 
@@ -131,6 +133,8 @@ flowchart LR
 - `ColorDepth::Ansi256` approche chaque `Rgb` de la palette xterm (cube 6x6x6 ou rampe de gris).
 - Les murs (`def.connects`) choisissent un trait de boîte selon leurs voisins identiques (`wall_mask` : 1 nord, 2 est, 4 sud, 8 ouest) ; en `Wide`, une seconde cellule prolonge le trait vers l'est.
 - Priorité d'affichage d'une cellule : effet, puis entité, puis tuile. La tuile visée est éclaircie (normal) ou soulignée (incognito).
+- Chrome en jeu de glyphes `Ascii` (`ui::bordered`, `ui::pick`) : bordures `+-|`, spinner `| / - \`, curseur de saisie `_`, `...`, `<3`, séparateurs `-`/`|`, `arrows` à la place des flèches dans l'aide ; sinon bordures arrondies, spinner braille, `█`, `…`, `♥`, `·`.
+- Hors ligne : la carte est dessinée avec couleurs divisées par 2 et `DIM` (`map::render`).
 - Fond : `bg` de la tuile, sinon `bg` du biome, sinon `theme.unknown` ; chunk inconnu = fond `unknown`.
 
 ## Assistant de configuration
@@ -150,7 +154,7 @@ flowchart TD
 
 - Non à la première question : jeu `Ascii`, les deux questions emoji sont sautées.
 - Réponse non à la largeur des emoji : jeu `Unicode`.
-- Nom et serveur : saisie libre (24 et 64 caractères max) ; vide = valeur par défaut de la config de départ (celle sauvegardée, ou `Config::default`).
+- Nom et serveur : saisie libre (`MAX_NAME` = 16, partagé avec le serveur, et 64 caractères max ; collage accepté sur une ligne) ; vide = valeur par défaut de la config de départ (celle sauvegardée, ou `Config::default`).
 - Retour arrière : à vide dans un champ texte ou hors champ, revient à la question précédente effectivement posée (les étapes sautées ne sont pas dans l'historique).
 - Échap ou Ctrl+C : `Outcome::Cancel`, quitte sans sauvegarder.
 

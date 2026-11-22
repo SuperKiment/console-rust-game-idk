@@ -4,16 +4,16 @@
 | 18-31 | Modules |
 | 32-54 | Boucle de jeu |
 | 55-67 | — Tick (20 Hz) |
-| 68-73 | — Actions des joueurs |
-| 74-88 | — Sessions et déconnexions |
-| 89-115 | Monde par chunks |
-| 116-122 | — Streaming de chunks |
-| 123-137 | IA des animaux (paramétrique) |
-| 138-155 | Sauvegarde |
-| 156-160 | Docs liées |
+| 68-75 | — Actions des joueurs |
+| 76-90 | — Sessions et déconnexions |
+| 91-117 | Monde par chunks |
+| 118-124 | — Streaming de chunks |
+| 125-139 | IA des animaux (paramétrique) |
+| 140-162 | Sauvegarde |
+| 163-167 | Docs liées |
 # Serveur : architecture
 
-> Vérifié le 2026-11-20 depuis `crates/server/src/` (`lib.rs`, `main.rs`, `net.rs`, `game.rs`, `ai.rs`, `save.rs`, `rng.rs`, `world/`). Fiche : [vue-ensemble.md](vue-ensemble.md).
+> Vérifié le 2026-11-22 depuis `crates/server/src/` (`lib.rs`, `main.rs`, `net.rs`, `game.rs`, `ai.rs`, `save.rs`, `rng.rs`, `world/`). Fiche : [vue-ensemble.md](vue-ensemble.md).
 
 ## Modules
 
@@ -69,6 +69,8 @@ Un `Move` reçu hors cooldown (`MOVE_COOLDOWN` = 90 ms) s'exécute tout de suite
 
 Dans `Game::handle` : `Interact`, `Build`, `Break` visent la tuile adjacente dans la direction donnée. `Build` pose `Tile::BUILT` (`Wall`) sur une tuile praticable, libre de joueur et d'animal. `Break` utilise `breaks_into` de la définition de la tuile. `set_tile` notifie par `TileChanged` les joueurs qui détiennent le chunk, plus un effet `Dust`.
 
+`Chat` : contrôles supprimés, `trim`, 240 caractères max (`MAX_CHAT`), message vide ignoré ; diffusé à tous en `Log(Chat)`.
+
 Les animaux ne bloquent jamais un joueur (commentaire de `try_move`), mais un joueur bloque les animaux.
 
 ### Sessions et déconnexions
@@ -82,7 +84,7 @@ Les animaux ne bloquent jamais un joueur (commentaire de `try_move`), mais un jo
 Côté `Game` :
 
 - Envoi par `Player::send` (`try_send`). File pleine : drapeau `overflow`, déconnexion au tick suivant. File fermée : rien, le `Leave` de la tâche réseau arrive de lui-même.
-- `join` avec un nom déjà connecté **remplace** la session : l'ancien joueur est retiré de `players` (son `tx` est lâché, ce qui ferme sa connexion), il reçoit `Rejected("replaced by new connection")` en dernier message, et la nouvelle connexion reprend `id`, position et orientation. Pas de passage par `offline`. Les animaux apprivoisés sont liés au nom : rien à migrer.
+- `join` avec un nom déjà connecté **remplace** la session : l'ancien joueur est retiré de `players` (son `tx` est lâché, ce qui ferme sa connexion), il reçoit `Rejected("replaced by new connection")` en dernier message, et la nouvelle connexion reprend `id`, position et orientation (journal système « <nom> reconnected. » au lieu de « joined the world. »). Pas de passage par `offline`. Les animaux apprivoisés sont liés au nom : rien à migrer.
 - Le `Leave` tardif de l'ancienne `ConnId` ne trouve plus de joueur : sans effet, il n'écrase ni le nouveau joueur ni `offline`.
 - Nom nettoyé par `clean_name` (contrôles filtrés, `trim`, 16 caractères) ; plus de suffixe numérique.
 
@@ -128,8 +130,8 @@ flowchart TD
 |---|---|
 | `step_ms` | délai entre deux pas (jitter de plus ou moins 25 %) |
 | `idle` | probabilité de rester immobile |
-| `flee_radius` | fuit les joueurs plus proches que cette distance |
-| `curious_radius` | s'approche des joueurs plus proches (arrêt à `FOLLOW_DIST` = 2) |
+| `flee_radius` | fuit les joueurs plus proches que cette distance (0 = ne fuit jamais, même avec un joueur sur sa tuile) |
+| `curious_radius` | s'approche des joueurs plus proches, une fois sur deux (arrêt à `FOLLOW_DIST` = 2 ; 0 = indifférent) |
 | `tameable` | une caresse le fait suivre le joueur ; une seconde le libère |
 | `sound_chance` | probabilité par pas d'émettre un son |
 
