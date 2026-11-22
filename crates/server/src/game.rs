@@ -61,17 +61,28 @@ impl Player {
 pub struct Animal {
     pub id: EntityId,
     pub species: Species,
-    pub pos: Pos,
+    /// Privé : l'index `Game::animal_index` en dépend, seul [`Game::move_animal`] la modifie.
+    pos: Pos,
     pub facing: Dir,
     /// Name of the player it follows.
     pub tamed_by: Option<String>,
     pub next_step: Instant,
 }
 
+impl Animal {
+    pub fn pos(&self) -> Pos {
+        self.pos
+    }
+}
+
 pub struct Game {
     pub world: World,
     pub players: HashMap<ConnId, Player>,
-    pub animals: HashMap<EntityId, Animal>,
+    /// Privé : insertion par [`Game::insert_animal`], déplacement par [`Game::move_animal`],
+    /// pour garder `animal_index` cohérent. Lecture par [`Game::animals`].
+    animals: HashMap<EntityId, Animal>,
+    /// Tuile -> animal qui l'occupe (au plus un par tuile). Rend [`Game::animal_at`] O(1).
+    animal_index: HashMap<Pos, EntityId>,
     /// Last known place of players who are not connected, by name.
     pub offline: HashMap<String, (Pos, Dir)>,
     pub next_id: EntityId,
@@ -85,6 +96,7 @@ impl Game {
             world,
             players: HashMap::new(),
             animals: HashMap::new(),
+            animal_index: HashMap::new(),
             offline: HashMap::new(),
             next_id: 1,
             rng,
@@ -308,7 +320,58 @@ impl Game {
     // --- queries ---
 
     pub fn animal_at(&self, pos: Pos) -> Option<EntityId> {
-        self.animals.values().find(|a| a.pos == pos).map(|a| a.id)
+        self.animal_index.get(&pos).copied()
+    }
+
+    pub fn animals(&self) -> &HashMap<EntityId, Animal> {
+        &self.animals
+    }
+
+    pub fn animal_mut(&mut self, id: EntityId) -> &mut Animal {
+        self.animals.get_mut(&id).expect("animal exists")
+    }
+
+    /// Crée un animal en `pos`. `None` (rien n'est créé) si une autre bête occupe déjà la tuile :
+    /// le générateur et `free` l'évitent, mais une vieille save ou un animal arrivé dans un chunk
+    /// pas encore peuplé peuvent la produire. Un animal par tuile garde l'index exact.
+    pub fn insert_animal(
+        &mut self,
+        species: Species,
+        pos: Pos,
+        tamed_by: Option<String>,
+        now: Instant,
+    ) -> Option<EntityId> {
+        if self.animal_index.contains_key(&pos) {
+            return None;
+        }
+        let id = self.alloc_id();
+        self.animals.insert(id, Animal { id, species, pos, facing: Dir::South, tamed_by, next_step: now });
+        self.animal_index.insert(pos, id);
+        Some(id)
+    }
+
+    /// Seul point de mutation de `Animal::pos`. L'appelant a vérifié que `pos` est libre.
+    pub fn move_animal(&mut self, id: EntityId, pos: Pos) {
+        debug_assert!(self.animal_at(pos).is_none_or(|o| o == id), "tile {pos:?} already holds an animal");
+        let a = self.animals.get_mut(&id).expect("animal exists");
+        self.animal_index.remove(&a.pos);
+        a.pos = pos;
+        self.animal_index.insert(pos, id);
+    }
+
+    /// Test : retire tous les animaux (ceux du chunk de départ gênent les scénarios).
+    #[cfg(test)]
+    pub fn clear_animals(&mut self) {
+        self.animals.clear();
+        self.animal_index.clear();
+    }
+
+    /// Test : l'index doit être exactement le recalcul complet depuis `animals`.
+    #[cfg(test)]
+    pub fn assert_animal_index(&self) {
+        let rebuilt: HashMap<Pos, EntityId> = self.animals.values().map(|a| (a.pos, a.id)).collect();
+        assert_eq!(rebuilt.len(), self.animals.len(), "two animals share a tile");
+        assert_eq!(self.animal_index, rebuilt);
     }
 
     pub fn player_at(&self, pos: Pos) -> bool {
@@ -360,24 +423,19 @@ impl Game {
 
     /// Sends chunks entering the player's view, and forgets those far behind (the client drops them too).
     fn stream_chunks(&mut self, conn: ConnId, now: Instant) {
-        let Game { world, players, animals, next_id, .. } = self;
-        let Some(p) = players.get_mut(&conn) else { return };
+        let Some(p) = self.players.get(&conn) else { return };
         let center = p.pos.chunk();
-        for cp in center.around(VIEW_CHUNKS) {
-            if p.sent.contains(&cp) {
-                continue;
+        let entering: Vec<ChunkPos> = center.around(VIEW_CHUNKS).filter(|cp| !p.sent.contains(cp)).collect();
+        for cp in entering {
+            for (species, pos) in self.world.load(cp) {
+                self.insert_animal(species, pos, None, now);
             }
-            for (species, pos) in world.load(cp) {
-                let id = *next_id;
-                *next_id += 1;
-                animals.insert(
-                    id,
-                    Animal { id, species, pos, facing: Dir::South, tamed_by: None, next_step: now },
-                );
-            }
-            p.send(ServerMsg::Chunk(world.chunk_data(cp)));
+            let data = self.world.chunk_data(cp);
+            let p = self.players.get_mut(&conn).expect("checked above");
+            p.send(ServerMsg::Chunk(data));
             p.sent.insert(cp);
         }
+        let p = self.players.get_mut(&conn).expect("checked above");
         p.sent.retain(|c| c.dist(center) <= KEEP_CHUNKS);
     }
 
@@ -439,18 +497,8 @@ mod tests {
         let id = g.players[&1].id;
         g.players.get_mut(&1).unwrap().pos = Pos::new(40, 40);
         g.players.get_mut(&1).unwrap().facing = Dir::West;
-        g.animals.clear();
-        g.animals.insert(
-            9_000_000,
-            Animal {
-                id: 9_000_000,
-                species: Species::Dog,
-                pos: Pos::new(41, 40),
-                facing: Dir::South,
-                tamed_by: Some("alice".into()),
-                next_step: now,
-            },
-        );
+        g.clear_animals();
+        let dog = g.insert_animal(Species::Dog, Pos::new(41, 40), Some("alice".into()), now).unwrap();
         drain(&mut old_rx);
 
         let mut new_rx = join_rx(&mut g, 2, "alice", now);
@@ -458,7 +506,7 @@ mod tests {
         let p = &g.players[&2];
         assert_eq!((p.name.as_str(), p.id, p.facing), ("alice", id, Dir::West));
         assert!(p.pos.dist(Pos::new(40, 40)) <= 1, "position kept (nearest walkable)");
-        assert_eq!(g.animals[&9_000_000].tamed_by.as_deref(), Some(p.name.as_str()));
+        assert_eq!(g.animals()[&dog].tamed_by.as_deref(), Some(p.name.as_str()));
         assert!(!g.offline.contains_key("alice"));
         let old_msgs = drain(&mut old_rx);
         assert_eq!(old_msgs, vec![ServerMsg::Rejected("name alice used by a new connection".into())]);
@@ -485,6 +533,35 @@ mod tests {
         }
         assert!(g.players.is_empty(), "slow client dropped");
         assert!(g.offline.contains_key("slow"), "position kept for its return");
+    }
+
+    #[test]
+    fn animal_index_follows_spawn_and_ticks() {
+        let now = Instant::now();
+        let mut g = Game::new(World::new(5));
+        join(&mut g, 1, "alice", now);
+        assert!(!g.animals().is_empty(), "le chunk de départ a des animaux");
+        g.assert_animal_index();
+        for i in 0..400 {
+            g.tick(now + Duration::from_millis(i * 50));
+        }
+        g.assert_animal_index();
+        for a in g.animals().values() {
+            assert_eq!(g.animal_at(a.pos()), Some(a.id));
+        }
+    }
+
+    #[test]
+    fn insert_refuses_occupied_tile_and_move_updates_index() {
+        let now = Instant::now();
+        let mut g = Game::new(World::new(5));
+        let (a, b) = (Pos::new(0, 0), Pos::new(1, 0));
+        let id = g.insert_animal(Species::Cow, a, None, now).unwrap();
+        assert_eq!(g.insert_animal(Species::Dog, a, None, now), None);
+        assert_eq!(g.animals().len(), 1);
+        g.move_animal(id, b);
+        assert_eq!((g.animal_at(a), g.animal_at(b)), (None, Some(id)));
+        g.assert_animal_index();
     }
 
     #[test]
