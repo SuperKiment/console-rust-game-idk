@@ -87,8 +87,11 @@ impl GameState {
     }
 
     /// Connexion perdue : on garde chunks et position pour une carte grisée, sans entités ni effets.
+    /// Appelé à chaque échec de reconnexion : `me` est alors déjà `None`, on garde la dernière position.
     pub fn disconnect(&mut self) {
-        self.last_pos = self.my_pos();
+        if let Some(p) = self.my_pos() {
+            self.last_pos = Some(p);
+        }
         self.me = None;
         self.entities.clear();
         self.online.clear();
@@ -166,5 +169,26 @@ mod tests {
         s.apply(ServerMsg::Log(LogLine::new(LogKind::Chat { from: "bob".into() }, "hi")), now);
         s.apply(ServerMsg::Online(vec![]), now);
         assert_eq!(s.log.back().unwrap().color, 3);
+    }
+
+    #[test]
+    fn repeated_disconnect_keeps_map_center() {
+        let mut s = GameState::default();
+        let now = Instant::now();
+        let pos = Pos::new(3, 4);
+        s.apply(ServerMsg::Welcome { id: 1, name: "a".into(), seed: 0 }, now);
+        s.apply(
+            ServerMsg::Entities(vec![EntityView {
+                id: 1,
+                pos,
+                facing: Dir::North,
+                look: idk_shared::protocol::Look::Player { name: "a".into(), color: 0 },
+            }]),
+            now,
+        );
+        s.disconnect();
+        s.disconnect();
+        assert!(s.is_offline());
+        assert_eq!(s.map_center(), Some(pos));
     }
 }

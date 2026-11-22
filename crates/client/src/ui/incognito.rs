@@ -55,13 +55,13 @@ fn draw_tabs(f: &mut Frame, app: &App, area: Rect) {
 fn draw_editor(f: &mut Frame, app: &App, area: Rect) {
     let t = &INCOGNITO;
     let paint = |c| app.config.colors.paint(c);
-    let Some(me) = app.state.my_pos() else { return };
-    let first = me.y - area.height as i32 / 2;
+    let Some(center) = app.state.map_center() else { return };
+    let first = center.y - area.height as i32 / 2;
     let width = gutter_width(first, first + area.height as i32 - 1);
     let [gutter, text] = Layout::horizontal([Constraint::Length(width), Constraint::Min(0)]).areas(area);
     let lines: Vec<Line> = (first..first + area.height as i32)
         .map(|y| {
-            let color = if y == me.y { t.text } else { t.dim };
+            let color = if y == center.y { t.text } else { t.dim };
             Line::styled(gutter_line(y, width), Style::new().fg(paint(color)))
         })
         .collect();
