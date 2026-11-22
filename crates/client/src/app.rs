@@ -15,6 +15,7 @@ use crate::state::GameState;
 
 const FRAME: Duration = Duration::from_millis(33);
 const MAX_CHAT: usize = 240;
+const NOT_CONNECTED: &str = "Not connected.";
 /// Délai max entre deux Esc pour confirmer la sortie.
 const QUIT_CONFIRM: Duration = Duration::from_secs(2);
 
@@ -95,6 +96,8 @@ pub async fn run(terminal: &mut DefaultTerminal, config: Config) -> std::io::Res
 impl App {
     fn on_net(&mut self, ev: NetEvent) {
         match ev {
+            // Reconnexion en cours : le popup reste sur « offline » au lieu d'alterner toutes les 2 s.
+            NetEvent::Connecting if self.state.is_offline() && matches!(self.status, Status::Offline(_)) => {}
             NetEvent::Connecting => self.status = Status::Connecting,
             NetEvent::Msg(msg) => {
                 self.status = Status::Online;
@@ -139,6 +142,10 @@ impl App {
         }
         match &mut self.mode {
             Mode::Chat(text) => match key.code {
+                // Hors ligne : on garde le chat ouvert et son texte, rien n'est perdu.
+                KeyCode::Enter if !matches!(self.status, Status::Online) => {
+                    self.state.push_log(LogLine::new(LogKind::System, NOT_CONNECTED));
+                }
                 KeyCode::Enter => {
                     let msg = std::mem::take(text);
                     if !msg.trim().is_empty() {
@@ -172,7 +179,7 @@ impl App {
             Action::Build => self.send(ClientMsg::Build(facing)),
             Action::Break => self.send(ClientMsg::Break(facing)),
             Action::Chat if !matches!(self.status, Status::Online) => {
-                self.state.push_log(LogLine::new(LogKind::System, "Not connected."));
+                self.state.push_log(LogLine::new(LogKind::System, NOT_CONNECTED));
             }
             Action::Chat => self.mode = Mode::Chat(String::new()),
             Action::ToggleIncognito => self.incognito = !self.incognito,
@@ -351,5 +358,40 @@ mod tests {
         assert_eq!(app.sent.try_recv().unwrap(), ClientMsg::Move(Dir::East));
         assert_eq!(app.sent.try_recv().unwrap(), ClientMsg::Move(Dir::North));
         assert_eq!(app.sent.try_recv().unwrap(), ClientMsg::Build(Dir::North));
+    }
+
+    #[test]
+    fn chat_enter_offline_keeps_chat_open_and_logs() {
+        let mut app = chat_app("salut");
+        app.on_net(NetEvent::Disconnected("gone".into()));
+        app.on_terminal(Event::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)));
+        assert_eq!(chat_text(&app), "salut");
+        assert_eq!(app.state.log.back().unwrap().line.text, "Not connected.");
+        assert!(app.sent.try_recv().is_err());
+    }
+
+    #[test]
+    fn connecting_keeps_offline_after_a_session_but_not_before() {
+        use idk_shared::protocol::ServerMsg;
+        // Avant toute session : Connecting passe normalement.
+        let mut app = App::for_test(Status::Offline("refused".into()));
+        app.on_net(NetEvent::Connecting);
+        assert!(matches!(app.status, Status::Connecting));
+        // Après une session : le popup reste sur « offline ».
+        let mut app = App::for_test(Status::Online);
+        let now = Instant::now();
+        app.state.apply(ServerMsg::Welcome { id: 1, name: "a".into(), seed: 0 }, now);
+        app.state.apply(
+            ServerMsg::Entities(vec![idk_shared::protocol::EntityView {
+                id: 1,
+                pos: idk_shared::geo::Pos::new(0, 0),
+                facing: Dir::North,
+                look: idk_shared::protocol::Look::Player { name: "a".into(), color: 0 },
+            }]),
+            now,
+        );
+        app.on_net(NetEvent::Disconnected("gone".into()));
+        app.on_net(NetEvent::Connecting);
+        assert!(matches!(&app.status, Status::Offline(r) if r == "gone"));
     }
 }
