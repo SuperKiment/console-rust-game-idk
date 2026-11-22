@@ -86,7 +86,7 @@ Côté `Game` :
 - Envoi par `Player::send` (`try_send`). File pleine : drapeau `overflow`, déconnexion au tick suivant. File fermée : rien, le `Leave` de la tâche réseau arrive de lui-même.
 - `join` avec un nom déjà connecté **remplace** la session : l'ancien joueur est retiré de `players` (son `tx` est lâché, ce qui ferme sa connexion), il reçoit `Rejected("name <nom> used by a new connection")` en dernier message, et la nouvelle connexion reprend `id`, position et orientation (journal système « <nom> reconnected. » au lieu de « joined the world. »). Pas de passage par `offline`. Les animaux apprivoisés sont liés au nom : rien à migrer.
 - Le `Leave` tardif de l'ancienne `ConnId` ne trouve plus de joueur : sans effet, il n'écrase ni le nouveau joueur ni `offline`.
-- Nom nettoyé par `clean_name` (contrôles filtrés, `trim`, 16 caractères) ; plus de suffixe numérique.
+- Nom nettoyé par `clean_name` (shared) (contrôles filtrés, `trim`, 16 caractères) ; plus de suffixe numérique.
 
 ## Monde par chunks
 
