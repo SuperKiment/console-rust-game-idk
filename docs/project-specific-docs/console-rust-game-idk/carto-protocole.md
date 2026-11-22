@@ -4,14 +4,14 @@
 | 18-21 | Framing |
 | 22-45 | Messages |
 | 46-72 | Séquence de connexion |
-| 73-80 | Règles du serveur à l'accueil |
-| 81-92 | Keepalive et timeouts |
-| 93-96 | Côté client |
-| 97-106 | Versionnement |
-| 107-109 | Points non vérifiés |
+| 73-81 | Règles du serveur à l'accueil |
+| 82-93 | Keepalive et timeouts |
+| 94-97 | Côté client |
+| 98-107 | Versionnement |
+| 108-110 | Points non vérifiés |
 # Protocole client-serveur
 
-> Vérifié le 2026-11-20 depuis `crates/shared/src/protocol.rs`, `crates/shared/src/net.rs`, `crates/server/src/net.rs`, `crates/server/src/game.rs`, `crates/client/src/net.rs`, `crates/client/src/state.rs`.
+> Vérifié le 2026-11-22 depuis `crates/shared/src/protocol.rs`, `crates/shared/src/net.rs`, `crates/server/src/net.rs`, `crates/server/src/game.rs`, `crates/client/src/net.rs`, `crates/client/src/state.rs`.
 
 Un seul socket TCP par client, messages typés dans les deux sens. Les types vivent dans [shared](shared/vue-ensemble.md) ; le serveur et le client ne partagent rien d'autre.
 
@@ -29,7 +29,7 @@ Définis dans `crates/shared/src/protocol.rs`.
 | `Move(Dir)` | avance d'une tuile, ou tourne seulement si bloqué |
 | `Interact(Dir)` | caresse un animal, salue un joueur, ou décrit la tuile visée |
 | `Build(Dir)` / `Break(Dir)` | pose un mur / casse la tuile adjacente |
-| `Chat(String)` | message public |
+| `Chat(String)` | message public (nettoyé côté serveur : contrôles supprimés, espaces des bords retirés, 240 caractères max, ignoré si vide) |
 | `Ping` | keepalive toutes les 5 s ; ignoré par `Game`, il sert à réarmer le délai de lecture du serveur |
 
 | `ServerMsg` | Rôle |
@@ -57,7 +57,7 @@ sequenceDiagram
     else version identique
         N->>G: Event::Join
         G-->>C: Welcome { id, name, seed }
-        G-->>C: Log "joined" puis Online
+        G-->>C: Log "joined" (ou "reconnected") puis Online
         G-->>C: Chunk x N (rayon de 3 chunks)
         loop chaque tick, 20 Hz
             G-->>C: Entities

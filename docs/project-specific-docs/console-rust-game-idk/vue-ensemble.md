@@ -1,6 +1,6 @@
 # console-rust-game-idk
 
-> Dépôt `console-rust-game-idk`, chemin `./`. Vérifié le 2026-11-20 depuis `Cargo.toml`, `crates/*/Cargo.toml`, `Dockerfile`, `docker-compose.yml`, `.github/` et le code des trois crates.
+> Dépôt `console-rust-game-idk`, chemin `./`. Vérifié le 2026-11-22 depuis `Cargo.toml`, `crates/*/Cargo.toml`, `Dockerfile`, `docker-compose.yml`, `.github/` et le code des trois crates.
 
 Jeu multijoueur temps réel dans le terminal : serveur faisant autorité, client TUI. Workspace cargo (edition 2024), `resolver = "2"`, membres `crates/*`.
 
@@ -29,6 +29,6 @@ Les deux binaires ne se référencent pas : tout passe par le protocole de `idk-
 
 ## Dossiers sans code Rust
 
-- `Dockerfile`, `docker-compose.yml`, `.dockerignore` : image multi-étapes (cible `server`, cible `client`), service `server` (port 7777, volume `world` monté en `/data`), service `client` (profil `client`, volume `client-config` monté en `/config`).
-- `.github/` : `workflows/ci.yml` (fmt, clippy `-D warnings`, tests), gabarits d'issue (`ISSUE_TEMPLATE/task.md`) et de PR (`pull_request_template.md`).
+- `Dockerfile`, `docker-compose.yml`, `.dockerignore` : image multi-étapes (builder `rust:1-slim-bookworm`, `cargo build --release --locked`, puis cibles `server` et `client` sur `debian:bookworm-slim`, utilisateur non-root `idk`), service `server` (port 7777, volume `world` monté en `/data`), service `client` (profil `client`, volume `client-config` monté en `/config`, `/etc/localtime` monté en lecture seule pour l'heure locale).
+- `.github/` : `workflows/ci.yml` (job `check` : fmt, clippy `-D warnings`, tests ; job `docker` : build des cibles `server` et `client`, puis `--help` de chaque image), gabarits d'issue (`ISSUE_TEMPLATE/task.md`) et de PR (`pull_request_template.md`).
 - `docs/` : cette documentation, règles dans [../../conventions-docs.md](../../conventions-docs.md).

@@ -1,6 +1,6 @@
 # server
 
-> Dépôt `console-rust-game-idk`, chemin `crates/server/` (paquet `idk-server`). Vérifié le 2026-11-20 depuis `crates/server/Cargo.toml`, `src/`, `tests/network.rs`, `examples/worldmap.rs`.
+> Dépôt `console-rust-game-idk`, chemin `crates/server/` (paquet `idk-server`). Vérifié le 2026-11-22 depuis `crates/server/Cargo.toml`, `src/`, `tests/network.rs`, `examples/worldmap.rs`.
 
 ## À quoi ça sert
 
@@ -22,8 +22,8 @@ Un seul serveur, un monde. Image docker cible `server` (volume `/data`, port 777
 
 ## Tests
 
-- Unitaires : `src/ai.rs`, `src/world/mod.rs`, `src/world/generator.rs`.
-- Intégration : `tests/network.rs` (vrai serveur sur port aléatoire, client brut : connexion, construction, chat, persistance au redémarrage).
+- Unitaires : `src/ai.rs`, `src/game.rs`, `src/save.rs`, `src/world/mod.rs`, `src/world/generator.rs`.
+- Intégration : `tests/network.rs` (vrai serveur sur port aléatoire, client brut : connexion, construction, chat, persistance au redémarrage, reprise du même nom, handshake invalide).
 - Exemple : `cargo run -p idk-server --example worldmap -- <seed> [step]` affiche une vue d'ensemble des biomes.
 
 ## Docs liées

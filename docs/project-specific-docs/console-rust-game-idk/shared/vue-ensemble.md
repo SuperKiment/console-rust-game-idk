@@ -1,13 +1,13 @@
 # shared
 
-> Dépôt `console-rust-game-idk`, chemin `crates/shared/` (paquet `idk-shared`). Vérifié le 2026-11-20 depuis `crates/shared/Cargo.toml` et `crates/shared/src/`.
+> Dépôt `console-rust-game-idk`, chemin `crates/shared/` (paquet `idk-shared`). Vérifié le 2026-11-22 depuis `crates/shared/Cargo.toml` et `crates/shared/src/`.
 
 ## À quoi ça sert
 
 Code commun au serveur et au client, pour qu'ils ne puissent pas diverger :
 - `src/geo.rs` : `Pos`, `ChunkPos`, `Dir`, `CHUNK_SIZE = 32`, conversions position/chunk/index local.
 - `src/content/` : tables de contenu (`Tile`, `Biome`, `Species`, `Effect`) générées par la macro `content_table!`, plus `Rgb`, `Glyph`, `PLAYER_GLYPH`, `PLAYER_COLORS`.
-- `src/protocol.rs` : `ClientMsg`, `ServerMsg`, `PROTOCOL_VERSION`, `DEFAULT_PORT`.
+- `src/protocol.rs` : `ClientMsg`, `ServerMsg`, `PROTOCOL_VERSION`, `DEFAULT_PORT`, `VIEW_CHUNKS`, `KEEP_CHUNKS`, `MAX_NAME` (16).
 - `src/net.rs` : `split()`, `Reader::recv`, `Writer::send` (longueur + postcard).
 
 ## Techno

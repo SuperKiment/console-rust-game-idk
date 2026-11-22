@@ -54,9 +54,9 @@ Options client : `--server`, `--name`, `--incognito`, `--configure` (env `IDK_SE
 
 Au premier lancement, un assistant pose quelques questions (symboles Unicode et emoji, couleurs, nom, serveur, incognito) et écrit le fichier de config. `--configure` le relance à tout moment (`docker compose run --rm client --configure` en docker) ; Échap quitte sans rien sauvegarder.
 
-Fichier TOML (nom, serveur, glyphes, couleurs, incognito) :
+Fichier TOML (nom, serveur, glyphes, couleurs, incognito) ; un fichier invalide est renommé en `client.toml.bak` et l'assistant se relance :
 `$IDK_CONFIG`, sinon `$XDG_CONFIG_HOME/idk-game/client.toml`, sinon `~/.config/idk-game/client.toml`.
-En docker : volume `client-config` monté dans `/config`.
+En docker : volume `client-config` monté dans `/config` ; `/etc/localtime` est monté pour que le journal et l'horloge incognito affichent l'heure locale.
 
 ## Mode incognito
 

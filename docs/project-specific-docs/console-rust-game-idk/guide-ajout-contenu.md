@@ -7,7 +7,7 @@ Tout le contenu est déclaré dans des tables de `crates/shared/src/content/`, v
 
 | Table | Fichier | Ce qu'une ligne définit |
 |---|---|---|
-| `Tile` / `TILES` | `content/tiles.rs` | nom, glyphe (ASCII / Unicode / large), couleurs, praticable, ce qu'elle devient une fois cassée, raccord en traits de boîte |
+| `Tile` / `TILES` | `content/tiles.rs` | nom, glyphe (ASCII / Unicode / large), couleur, fond optionnel (`bg`, sinon fond du biome), praticable, ce qu'elle devient une fois cassée, raccord en traits de boîte |
 | `Biome` / `BIOMES` | `content/biomes.rs` | couleur de sol, bande d'altitude, climat préféré (température, humidité), palette pondérée de tuiles, apparitions d'animaux par chunk |
 | `Species` / `SPECIES` | `content/species.rs` | nom, glyphe, couleur, paramètres d'IA (`Ai`), sons, réactions aux caresses |
 | `Effect` / `EFFECTS` | `content/effects.rs` | glyphe, couleur et durée d'un effet visuel éphémère |
