@@ -2,15 +2,15 @@
 | Lignes | Section |
 |---|---|
 | 18-34 | Modules |
-| 35-51 | Démarrage |
-| 52-65 | Boucle principale |
-| 66-87 | Connexion et reconnexion |
-| 88-102 | GameState |
-| 103-118 | Layouts |
-| 119-139 | Chaîne glyphes et couleurs |
-| 140-160 | Assistant de configuration |
-| 161-166 | Table BINDINGS |
-| 167-171 | Docs liées |
+| 35-53 | Démarrage |
+| 54-67 | Boucle principale |
+| 68-89 | Connexion et reconnexion |
+| 90-104 | GameState |
+| 105-120 | Layouts |
+| 121-141 | Chaîne glyphes et couleurs |
+| 142-162 | Assistant de configuration |
+| 163-168 | Table BINDINGS |
+| 169-173 | Docs liées |
 # Client : architecture
 
 > Vérifié le 2026-11-22 depuis `crates/client/src/` (`main.rs`, `app.rs`, `net.rs`, `state.rs`, `input.rs`, `config.rs`, `setup.rs`, `ui/`). Fiche : [vue-ensemble.md](vue-ensemble.md).
@@ -49,6 +49,8 @@ flowchart TD
 
 Les surcharges de la ligne de commande ne durent que la session et ne sont jamais écrites dans le fichier (`incognito` est combiné par OU avec la config). Si la sauvegarde de la config échoue (volume en lecture seule), le jeu continue avec la config en mémoire et un avertissement s'affiche sur stderr après la restauration du terminal. Un fichier de config invalide est renommé en `.bak` (message sur stderr) avant de relancer l'assistant. `main()` active aussi le collage bracketed (`EnableBracketedPaste`).
 
+Nom par défaut (`config::default_name`) : `$USER` s'il est non vide, sinon `player-XXXX` (4 chiffres tirés de l'heure et du pid), car l'image docker n'a pas `USER` et un nom fixe ferait s'éjecter les joueurs entre eux. L'assistant écrit ce nom dans le fichier de config : il reste stable d'un lancement à l'autre tant que la sauvegarde réussit.
+
 ## Boucle principale
 
 `app::run` crée la tâche réseau (`net::spawn`) et boucle jusqu'à `quit` sur un `tokio::select!` à trois branches :
@@ -79,7 +81,7 @@ stateDiagram-v2
 ```
 
 - Keepalive : `ClientMsg::Ping` toutes les 5 s (`PING_EVERY`), sinon le serveur ferme la session après 15 s de silence. Détection d'un serveur gelé ou d'une coupure sans fermeture TCP : si aucun message serveur n'arrive pendant 5 s (`SILENCE`, le serveur émet `Entities` à 20 Hz), la session échoue (`Disconnected: no data from server for 5 s`) et la reconnexion démarre. L'échéance n'est repoussée que par les messages du serveur, pas par les touches du joueur. `connect` a un timeout de 5 s (`CONNECT_TIMEOUT`).
-- Reconnexion sous le même nom : le serveur remplace l'éventuelle session fantôme et rend la position, l'orientation et les animaux apprivoisés. Si c'est cette session-ci qui est remplacée (autre client avec le même nom), elle reçoit `Rejected("replaced by new connection")` : statut `Rejected`, pas de nouvel essai, donc pas de vol de session en boucle.
+- Reconnexion sous le même nom : le serveur remplace l'éventuelle session fantôme et rend la position, l'orientation et les animaux apprivoisés. Si c'est cette session-ci qui est remplacée (autre client avec le même nom), elle reçoit `Rejected("name <nom> used by a new connection")` : statut `Rejected`, pas de nouvel essai, donc pas de vol de session en boucle.
 - Les touches envoyées pendant la coupure sont vidées avant de se reconnecter (`while out.try_recv().is_ok()`).
 - À `Disconnected`, `GameState::disconnect` garde les chunks et la dernière position connue (conservée aux `Disconnected` suivants, quand `me` est déjà vide : le dernier `my_pos()` connu n'est jamais écrasé par `None`), et vide `me`, `entities`, `online` et les effets (la ligne « Disconnected: … » n'est journalisée que si le statut était `Online`) ; `map::render` dessine alors la carte grisée (couleurs assombries, `DIM`, sans entités ni case visée) sous le popup de statut. L'éditeur incognito (F2) se centre aussi sur `map_center()` : texte et gutter restent visibles hors ligne. Le chat ne s'ouvre pas hors ligne : le journal local reçoit « Not connected. » ; si le chat était déjà ouvert à la coupure, Entrée le laisse ouvert avec son texte (rien n'est envoyé) et journalise la même ligne. Une fois une session établie (`GameState::is_offline`), `NetEvent::Connecting` (une fois par tentative) n'écrase plus `Status::Offline` : le popup reste stable sur « offline <raison> / retrying » au lieu d'alterner avec « connecting » ; avant la 1re session, `Connecting` s'affiche normalement. À `Welcome`, tout l'état est remplacé sauf le journal.
 - Le statut passe à `Online` dès le premier message, `Welcome` inclus.

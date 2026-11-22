@@ -84,7 +84,7 @@ Les animaux ne bloquent jamais un joueur (commentaire de `try_move`), mais un jo
 Côté `Game` :
 
 - Envoi par `Player::send` (`try_send`). File pleine : drapeau `overflow`, déconnexion au tick suivant. File fermée : rien, le `Leave` de la tâche réseau arrive de lui-même.
-- `join` avec un nom déjà connecté **remplace** la session : l'ancien joueur est retiré de `players` (son `tx` est lâché, ce qui ferme sa connexion), il reçoit `Rejected("replaced by new connection")` en dernier message, et la nouvelle connexion reprend `id`, position et orientation (journal système « <nom> reconnected. » au lieu de « joined the world. »). Pas de passage par `offline`. Les animaux apprivoisés sont liés au nom : rien à migrer.
+- `join` avec un nom déjà connecté **remplace** la session : l'ancien joueur est retiré de `players` (son `tx` est lâché, ce qui ferme sa connexion), il reçoit `Rejected("name <nom> used by a new connection")` en dernier message, et la nouvelle connexion reprend `id`, position et orientation (journal système « <nom> reconnected. » au lieu de « joined the world. »). Pas de passage par `offline`. Les animaux apprivoisés sont liés au nom : rien à migrer.
 - Le `Leave` tardif de l'ancienne `ConnId` ne trouve plus de joueur : sans effet, il n'écrase ni le nouveau joueur ni `offline`.
 - Nom nettoyé par `clean_name` (contrôles filtrés, `trim`, 16 caractères) ; plus de suffixe numérique.
 
@@ -135,7 +135,7 @@ flowchart TD
 | `tameable` | une caresse le fait suivre le joueur ; une seconde le libère |
 | `sound_chance` | probabilité par pas d'émettre un son |
 
-Priorité de décision dans `act` : animal apprivoisé trop loin (plus de `TELEPORT_DIST` = 40) se téléporte à côté de son maître ; apprivoisé au-delà de `FOLLOW_DIST` suit son maître (délai entre pas divisé par deux, plafonné à 200 ms) ; apprivoisé proche flâne (idle 0,85) ; sinon fuite, curiosité, puis errance. Un pas bloqué tente un déplacement latéral, jamais le demi-tour. Les sons passent dans le journal des joueurs à moins de `HEAR_RADIUS` (10) tuiles, avec un effet `Sound`.
+Priorité de décision dans `act` : animal apprivoisé trop loin (plus de `TELEPORT_DIST` = 40) se téléporte à côté de son maître ; apprivoisé au-delà de `FOLLOW_DIST` suit son maître (délai entre pas divisé par deux, plafonné à 200 ms) ; apprivoisé proche flâne (idle 0,85) ; apprivoisé dont le maître est hors ligne flâne aussi (idle 0,85), sans fuite ni curiosité envers les autres joueurs, et reste à lui (`tamed_by`) ; sinon fuite, curiosité, puis errance. Un pas bloqué tente un déplacement latéral, jamais le demi-tour. Les sons passent dans le journal des joueurs à moins de `HEAR_RADIUS` (10) tuiles, avec un effet `Sound`.
 
 ## Sauvegarde
 

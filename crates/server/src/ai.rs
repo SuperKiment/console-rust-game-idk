@@ -39,6 +39,8 @@ fn act(game: &mut Game, id: EntityId, players: &[(String, Pos)], now: Instant) {
     let (pos, def) = (a.pos, a.species.def());
     let ai = def.ai;
     let owner = a.tamed_by.as_ref().and_then(|n| players.iter().find(|(p, _)| p == n)).map(|(_, p)| *p);
+    // Maître déconnecté : l'animal reste à lui, il ne retombe pas dans les comportements sauvages.
+    let owner_offline = a.tamed_by.is_some() && owner.is_none();
     let nearest = players.iter().map(|(_, p)| *p).min_by_key(|p| p.dist(pos));
     let mut delay = ai.step_ms;
 
@@ -52,6 +54,7 @@ fn act(game: &mut Game, id: EntityId, players: &[(String, Pos)], now: Instant) {
             pos.dir_to(o)
         }
         (Some(_), _) => wander(game, 0.85),
+        (None, _) if owner_offline => wander(game, 0.85),
         // rayon 0 = jamais, même joueur sur la tuile de l'animal (les joueurs le traversent)
         (None, Some(n)) if ai.flee_radius > 0 && n.dist(pos) <= ai.flee_radius => {
             delay = ai.step_ms / 2;
@@ -209,6 +212,36 @@ mod tests {
             let delay = g.animals[&cow].next_step - now;
             assert!(delay >= Duration::from_millis(675), "seed {seed}: {delay:?}");
         }
+    }
+
+    /// Compte, sur 200 pas, ceux où l'animal d'alice (hors ligne) se rapproche de bob, et ceux au délai de fuite.
+    fn offline_owner_stats(species: Species) -> (u32, u32) {
+        let (mut g, id, _rx, now) = setup(species, (0, 0));
+        g.animals.get_mut(&id).unwrap().tamed_by = Some("alice".into());
+        let start = g.animals[&id].pos;
+        let bob = Pos::new(start.x + 4, start.y);
+        let players = [("bob".to_string(), bob)];
+        let (mut closer, mut fled) = (0, 0);
+        for i in 0..200 {
+            g.rng = crate::rng::Rng::new(i);
+            g.animals.get_mut(&id).unwrap().pos = start;
+            act(&mut g, id, &players, now);
+            closer += (g.animals[&id].pos.dist(bob) < start.dist(bob)) as u32;
+            // pas normal ≥ 0,75 × step_ms ; une fuite le diviserait par 2
+            let delay = g.animals[&id].next_step - now;
+            fled += (delay < Duration::from_millis((species.def().ai.step_ms as f32 * 0.75) as u64)) as u32;
+        }
+        (closer, fled)
+    }
+
+    #[test]
+    fn tamed_animal_with_offline_owner_ignores_other_players() {
+        // chien (curious_radius 6) : curieux, il se rapprocherait de bob ~50 % du temps ; en errance ~4 %
+        let (closer, _) = offline_owner_stats(Species::Dog);
+        assert!(closer < 50, "dog approached bob {closer}/200");
+        // lapin (flee_radius 5) : bob à 4 tuiles le ferait fuir à chaque pas
+        let (_, fled) = offline_owner_stats(Species::Rabbit);
+        assert_eq!(fled, 0, "rabbit fled {fled}/200");
     }
 
     #[test]
