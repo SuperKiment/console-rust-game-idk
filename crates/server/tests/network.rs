@@ -150,7 +150,10 @@ async fn same_name_replaces_old_connection() {
     assert_eq!(wait_for(&mut r2, |m| my_pos(m, id2)).await, moved);
 
     // The old one is told why, then closed.
-    wait_for(&mut r1, |m| matches!(m, ServerMsg::Rejected(r) if r.contains("replaced")).then_some(())).await;
+    wait_for(&mut r1, |m| {
+        matches!(m, ServerMsg::Rejected(r) if r.contains("used by a new connection")).then_some(())
+    })
+    .await;
     let end = tokio::time::timeout(Duration::from_secs(5), async {
         while let Ok(Some(_)) = r1.recv::<ServerMsg>().await {}
     })
