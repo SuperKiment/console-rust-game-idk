@@ -38,11 +38,26 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            name: std::env::var("USER").unwrap_or_else(|_| "player".into()),
+            name: default_name(std::env::var("USER").ok()),
             server: format!("127.0.0.1:{}", idk_shared::protocol::DEFAULT_PORT),
             glyphs: GlyphSet::default(),
             colors: ColorDepth::default(),
             incognito: false,
+        }
+    }
+}
+
+/// Nom par défaut : `$USER` s'il est non vide, sinon `player-XXXX` (4 chiffres tirés de l'heure
+/// et du pid). Sans `$USER` (image docker), un nom fixe ferait s'éjecter les joueurs entre eux.
+/// L'assistant écrit le nom dans le fichier de config : il reste stable d'un lancement à l'autre.
+fn default_name(user: Option<String>) -> String {
+    match user.filter(|u| !u.trim().is_empty()) {
+        Some(u) => u,
+        None => {
+            let nanos = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.subsec_nanos());
+            format!("player-{:04}", (nanos ^ std::process::id().wrapping_mul(2_654_435_761)) % 10_000)
         }
     }
 }
@@ -123,6 +138,17 @@ pub fn save(config: &Config) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn default_name_uses_user_or_random_suffix() {
+        assert_eq!(default_name(Some("alice".into())), "alice");
+        for user in [None, Some(String::new()), Some("  ".into())] {
+            let n = default_name(user);
+            let digits = n.strip_prefix("player-").expect("player- prefix");
+            assert!(digits.len() == 4 && digits.chars().all(|c| c.is_ascii_digit()), "{n}");
+            assert!(n.chars().count() <= idk_shared::protocol::MAX_NAME);
+        }
+    }
 
     #[test]
     fn normalize_server_adds_default_port() {

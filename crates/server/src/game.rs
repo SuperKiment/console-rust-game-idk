@@ -135,7 +135,7 @@ impl Game {
         let (id, pos, facing) = match old {
             Some(old) => {
                 // Un tx plein fait échouer l'envoi : l'ancienne connexion est fermée à la chute du tx.
-                old.send(ServerMsg::Rejected("replaced by new connection".into()));
+                old.send(ServerMsg::Rejected(format!("name {name} used by a new connection")));
                 (old.id, old.pos, old.facing)
             }
             None => {
@@ -463,7 +463,7 @@ mod tests {
         assert_eq!(g.animals[&9_000_000].tamed_by.as_deref(), Some(p.name.as_str()));
         assert!(!g.offline.contains_key("alice"));
         let old_msgs = drain(&mut old_rx);
-        assert_eq!(old_msgs, vec![ServerMsg::Rejected("replaced by new connection".into())]);
+        assert_eq!(old_msgs, vec![ServerMsg::Rejected("name alice used by a new connection".into())]);
         assert!(matches!(old_rx.try_recv(), Err(tokio::sync::mpsc::error::TryRecvError::Disconnected)));
         assert!(
             matches!(drain(&mut new_rx).first(), Some(ServerMsg::Welcome { name, .. }) if name == "alice")
