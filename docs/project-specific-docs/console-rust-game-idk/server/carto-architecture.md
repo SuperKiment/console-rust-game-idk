@@ -1,16 +1,17 @@
-13
+14
 | Lignes | Section |
 |---|---|
-| 18-31 | Modules |
-| 32-54 | Boucle de jeu |
-| 55-67 | — Tick (20 Hz) |
-| 68-75 | — Actions des joueurs |
-| 76-90 | — Sessions et déconnexions |
-| 91-117 | Monde par chunks |
-| 118-124 | — Streaming de chunks |
-| 125-139 | IA des animaux (paramétrique) |
-| 140-164 | Sauvegarde |
-| 165-169 | Docs liées |
+| 19-32 | Modules |
+| 33-55 | Boucle de jeu |
+| 56-68 | — Tick (20 Hz) |
+| 69-76 | — Actions des joueurs |
+| 77-85 | — Animaux et index de tuiles |
+| 86-100 | — Sessions et déconnexions |
+| 101-127 | Monde par chunks |
+| 128-134 | — Streaming de chunks |
+| 135-151 | IA des animaux (paramétrique) |
+| 152-179 | Sauvegarde |
+| 180-184 | Docs liées |
 # Serveur : architecture
 
 > Vérifié le 2026-11-22 depuis `crates/server/src/` (`lib.rs`, `main.rs`, `net.rs`, `game.rs`, `ai.rs`, `save.rs`, `rng.rs`, `world/`). Fiche : [vue-ensemble.md](vue-ensemble.md).
@@ -49,8 +50,8 @@ flowchart LR
 |---|---|
 | `tick` (50 ms) | `game.tick()` ; `MissedTickBehavior::Skip` |
 | canal `events` | `game.event()` |
-| `autosave` (60 s) | `save()` |
-| `shutdown` | sort de la boucle, sauvegarde finale |
+| `autosave` (60 s) | `to_save()` dans la boucle, écriture dans `spawn_blocking` (voir « Sauvegarde ») |
+| `shutdown` | sort de la boucle, attend l'écriture en cours, sauvegarde finale synchrone |
 
 ### Tick (20 Hz)
 
@@ -72,6 +73,15 @@ Dans `Game::handle` : `Interact`, `Build`, `Break` visent la tuile adjacente dan
 `Chat` : contrôles supprimés, `trim`, 240 caractères max (`MAX_CHAT`), message vide ignoré ; diffusé à tous en `Log(Chat)`.
 
 Les animaux ne bloquent jamais un joueur (commentaire de `try_move`), mais un joueur bloque les animaux.
+
+### Animaux et index de tuiles
+
+`Game.animals` (`HashMap<EntityId, Animal>`) est accompagné de `animal_index` (`HashMap<Pos, EntityId>`) : `animal_at(pos)` est O(1) (il servait de scan linéaire, appelé par `ai::free` jusqu'à 3 fois par pas, `Build`, `Interact`). Les deux champs sont privés à `game.rs` et `Animal.pos` aussi (lecture par `Animal::pos()`, liste par `Game::animals()`, modification des autres champs par `Game::animal_mut`). Seuls points de mutation :
+
+- `Game::insert_animal(espèce, pos, maître, now)` : crée l'animal (spawn de chunk, chargement de save). Un animal par tuile : si la tuile est déjà prise, rien n'est créé (`None`) ; le générateur et `ai::free` l'évitent, mais une vieille save ou un animal arrivé dans un chunk pas encore peuplé peuvent le provoquer (l'animal en trop est ignoré).
+- `Game::move_animal(id, pos)` : pas, sidestep, téléportation (`ai::try_step`, `ai::teleport_near`). L'appelant a vérifié que la tuile est libre.
+
+Aucun code ne retire d'animal aujourd'hui ; en ajouter un (mort, despawn) doit retirer aussi l'entrée de `animal_index`. En test, `Game::assert_animal_index` compare l'index à un recalcul complet.
 
 ### Sessions et déconnexions
 
@@ -117,7 +127,7 @@ flowchart TD
 
 ### Streaming de chunks
 
-`Game::stream_chunks(conn)` : pour chaque chunk dans le rayon `VIEW_CHUNKS` (3, `crates/shared/src/protocol.rs`) autour du joueur non présent dans `Player.sent`, appelle `world.load`, crée les animaux fraîchement apparus (`next_id`), envoie `ServerMsg::Chunk` et l'ajoute à `sent`. Les chunks à plus de `KEEP_CHUNKS` (= `VIEW_CHUNKS + 1`, partagé avec le client) sont retirés de `sent` ; le client les oublie à la même distance, ils seront renvoyés au retour.
+`Game::stream_chunks(conn)` : pour chaque chunk dans le rayon `VIEW_CHUNKS` (3, `crates/shared/src/protocol.rs`) autour du joueur non présent dans `Player.sent`, appelle `world.load`, crée les animaux fraîchement apparus (`insert_animal`), envoie `ServerMsg::Chunk` et l'ajoute à `sent`. Les chunks à plus de `KEEP_CHUNKS` (= `VIEW_CHUNKS + 1`, partagé avec le client) sont retirés de `sent` ; le client les oublie à la même distance, ils seront renvoyés au retour.
 
 > [!NOTE]
 > Les animaux ne disparaissent jamais d'eux-mêmes. Ils sont simplement gelés quand aucun joueur n'est à moins de `ACTIVE_RADIUS` (= `VIEW_TILES`, soit environ 2 fois la largeur et 6 fois la hauteur affichées par un terminal 120×40) tuiles.
@@ -135,6 +145,8 @@ flowchart TD
 | `tameable` | une caresse le fait suivre le joueur ; une seconde le libère |
 | `sound_chance` | probabilité par pas d'émettre un son |
 
+`ai::step` calcule la liste des joueurs une fois par tick, puis filtre les animaux : `next_step` échu d'abord, la recherche d'un joueur à moins de `ACTIVE_RADIUS` n'a lieu que pour les animaux dus (court-circuit du `&&`).
+
 Priorité de décision dans `act` : animal apprivoisé trop loin (plus de `TELEPORT_DIST` = 40) se téléporte à côté de son maître ; apprivoisé au-delà de `FOLLOW_DIST` suit son maître (délai entre pas divisé par deux, plafonné à 200 ms) ; apprivoisé proche flâne (idle 0,85) ; apprivoisé dont le maître est hors ligne flâne aussi (idle 0,85), sans fuite ni curiosité envers les autres joueurs, et reste à lui (`tamed_by`) ; sinon fuite, curiosité, puis errance. Un pas bloqué tente un déplacement latéral, jamais le demi-tour. Les sons passent dans le journal des joueurs à moins de `HEAR_RADIUS` (10) tuiles, avec un effet `Sound`.
 
 ## Sauvegarde
@@ -148,9 +160,12 @@ Priorité de décision dans `act` : animal apprivoisé trop loin (plus de `TELEP
 | `players` | `(nom, position, direction)` des joueurs connectés et hors ligne ; à la reconnexion sous le même nom, le joueur reprend sa position (`Game.offline`) |
 | `chunks` | chunks modifiés uniquement |
 | `spawned` | chunks dont les animaux ont été créés |
-| `animals` | `(espèce, position, maître)` ; de nouveaux identifiants sont attribués au chargement |
+| `animals` | `(espèce, position, maître)` ; de nouveaux identifiants sont attribués au chargement ; deux animaux sur la même tuile : le second est ignoré (avertissement) |
 
-Déclencheurs (`crates/server/src/lib.rs`) : toutes les 60 s (`AUTOSAVE`), et à l'arrêt sur ctrl-c ou SIGTERM (`shutdown_signal` dans `main.rs`). Une erreur d'écriture est journalisée sans arrêter le serveur. Au démarrage : sauvegarde existante (graine ignorée) sinon nouveau monde avec `--seed` ou une graine tirée de l'horloge.
+Déclencheurs (`crates/server/src/lib.rs`) : toutes les 60 s (`AUTOSAVE`), et à l'arrêt sur ctrl-c ou SIGTERM (`shutdown_signal` dans `main.rs`). Une erreur d'écriture est journalisée sans arrêter le serveur.
+
+- **Autosave asynchrone** : `game.to_save()` (clone, rapide) est pris dans la boucle de jeu, puis `save::write` (fsync) part dans `tokio::task::spawn_blocking` : les ticks ne sont plus bloqués par le disque. `run()` garde le `JoinHandle` ; si l'écriture précédente tourne encore (`!is_finished()`), le tick d'autosave est ignoré (« previous autosave still writing, skipped »), jamais deux écritures en parallèle.
+- **Sauvegarde finale** : synchrone, après avoir attendu (`await`) l'éventuelle écriture d'autosave en cours, pour ne jamais écrire deux fois en même temps dans `world.bin.tmp`. Au démarrage : sauvegarde existante (graine ignorée) sinon nouveau monde avec `--seed` ou une graine tirée de l'horloge.
 
 Chargement : `save::decode` lit d'abord `version` seule (`postcard::take_from_bytes::<u32>`, premier champ de `SaveData`, varint), puis dispatche par `match`. Aujourd'hui un seul bras (`SAVE_VERSION` => décode `SaveData`, puis `validate`) : pas de copie figée tant qu'une seule version existe.
 

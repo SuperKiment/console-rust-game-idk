@@ -9,7 +9,7 @@ use idk_shared::geo::{CHUNK_AREA, ChunkPos, Dir, Pos};
 use idk_shared::protocol::EntityId;
 use serde::{Deserialize, Serialize};
 
-use crate::game::{Animal, Game};
+use crate::game::Game;
 use crate::world::World;
 
 /// Version courante du format. Ajouter une version (3 étapes) :
@@ -43,7 +43,7 @@ impl Game {
             players: online.chain(offline).collect(),
             chunks: self.world.modified_chunks().map(|(p, t)| (p, t.clone())).collect(),
             spawned: self.world.spawned().collect(),
-            animals: self.animals.values().map(|a| (a.species, a.pos, a.tamed_by.clone())).collect(),
+            animals: self.animals().values().map(|a| (a.species, a.pos(), a.tamed_by.clone())).collect(),
         }
     }
 
@@ -52,8 +52,10 @@ impl Game {
         g.next_id = s.next_id;
         g.offline = s.players.into_iter().map(|(n, p, d)| (n, (p, d))).collect();
         for (species, pos, tamed_by) in s.animals {
-            let id = g.alloc_id();
-            g.animals.insert(id, Animal { id, species, pos, facing: Dir::South, tamed_by, next_step: now });
+            // Deux animaux sur la même tuile (vieille save) : le second est ignoré.
+            if g.insert_animal(species, pos, tamed_by, now).is_none() {
+                tracing::warn!(?pos, "save has two animals on one tile, one dropped");
+            }
         }
         g
     }
@@ -121,6 +123,22 @@ mod tests {
             spawned: vec![],
             animals: vec![],
         }
+    }
+
+    #[test]
+    fn loaded_save_has_consistent_animal_index() {
+        let now = Instant::now();
+        let mut data = sample();
+        let (a, b) = (Pos::new(3, 4), Pos::new(5, 6));
+        data.animals = vec![
+            (Species::Cow, a, None),
+            (Species::Dog, b, Some("bob".into())),
+            (Species::Rabbit, a, None), // doublon : ignoré
+        ];
+        let g = Game::from_save(data, now);
+        assert_eq!(g.animals().len(), 2);
+        assert!(g.animal_at(a).is_some() && g.animal_at(b).is_some());
+        g.assert_animal_index();
     }
 
     #[test]

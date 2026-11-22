@@ -24,9 +24,9 @@ const HEAR_RADIUS: i32 = 10;
 pub fn step(game: &mut Game, now: Instant) {
     let players: Vec<(String, Pos)> = game.players.values().map(|p| (p.name.clone(), p.pos)).collect();
     let due: Vec<EntityId> = game
-        .animals
+        .animals()
         .values()
-        .filter(|a| now >= a.next_step && players.iter().any(|(_, p)| p.dist(a.pos) <= ACTIVE_RADIUS))
+        .filter(|a| now >= a.next_step && players.iter().any(|(_, p)| p.dist(a.pos()) <= ACTIVE_RADIUS))
         .map(|a| a.id)
         .collect();
     for id in due {
@@ -35,8 +35,8 @@ pub fn step(game: &mut Game, now: Instant) {
 }
 
 fn act(game: &mut Game, id: EntityId, players: &[(String, Pos)], now: Instant) {
-    let a = &game.animals[&id];
-    let (pos, def) = (a.pos, a.species.def());
+    let a = &game.animals()[&id];
+    let (pos, def) = (a.pos(), a.species.def());
     let ai = def.ai;
     let owner = a.tamed_by.as_ref().and_then(|n| players.iter().find(|(p, _)| p == n)).map(|(_, p)| *p);
     // Maître déconnecté : l'animal reste à lui, il ne retombe pas dans les comportements sauvages.
@@ -77,15 +77,14 @@ fn act(game: &mut Game, id: EntityId, players: &[(String, Pos)], now: Instant) {
     if game.rng.chance(ai.sound_chance)
         && let Some(sound) = game.rng.pick(def.sounds)
     {
-        let pos = game.animals[&id].pos;
+        let pos = game.animals()[&id].pos();
         game.log_near(pos, HEAR_RADIUS, LogKind::Animal, format!("The {} goes \"{sound}\"", def.name));
         game.effect(pos, Effect::Sound);
     }
 
     // ±25 % jitter so herds do not move in lockstep.
     let jitter = 0.75 + game.rng.below(51) as f32 / 100.0;
-    game.animals.get_mut(&id).expect("animal exists").next_step =
-        now + Duration::from_millis((delay as f32 * jitter) as u64);
+    game.animal_mut(id).next_step = now + Duration::from_millis((delay as f32 * jitter) as u64);
 }
 
 fn wander(game: &mut Game, idle: f32) -> Option<Dir> {
@@ -98,7 +97,7 @@ fn free(game: &mut Game, pos: Pos) -> bool {
 
 /// Steps in `dir`, or sidesteps when blocked.
 fn try_step(game: &mut Game, id: EntityId, dir: Dir) {
-    let pos = game.animals[&id].pos;
+    let pos = game.animals()[&id].pos();
     // Côtés perpendiculaires à `dir`, dans un ordre aléatoire pour ne pas biaiser le contournement.
     let [l, r] = match dir {
         Dir::North | Dir::South => [Dir::East, Dir::West],
@@ -107,24 +106,23 @@ fn try_step(game: &mut Game, id: EntityId, dir: Dir) {
     let side = if game.rng.chance(0.5) { [l, r] } else { [r, l] };
     let options = [dir, side[0], side[1]];
     if let Some(d) = options.into_iter().find(|d| free(game, pos.step(*d))) {
-        let a = game.animals.get_mut(&id).expect("animal exists");
-        a.pos = pos.step(d);
-        a.facing = d;
+        game.move_animal(id, pos.step(d));
+        game.animal_mut(id).facing = d;
     }
 }
 
 fn teleport_near(game: &mut Game, id: EntityId, target: Pos) {
     let spot = Dir::ALL.into_iter().map(|d| target.step(d)).find(|p| free(game, *p));
     if let Some(p) = spot {
-        game.animals.get_mut(&id).expect("animal exists").pos = p;
+        game.move_animal(id, p);
     }
 }
 
 /// A player pets an animal: a reaction, and tameable animals start (or stop) following them.
 pub fn pet(game: &mut Game, conn: ConnId, id: EntityId) {
     let me = game.players[&conn].name.clone();
-    let a = &game.animals[&id];
-    let (def, pos, tamed_by) = (a.species.def(), a.pos, a.tamed_by.clone());
+    let a = &game.animals()[&id];
+    let (def, pos, tamed_by) = (a.species.def(), a.pos(), a.tamed_by.clone());
     if let Some(line) = game.rng.pick(def.pet) {
         game.tell(conn, LogKind::Animal, *line);
     }
@@ -137,14 +135,14 @@ pub fn pet(game: &mut Game, conn: ConnId, id: EntityId) {
         Some(owner) => (Some(owner.clone()), format!("The {} is loyal to {owner}.", def.name)),
         None => (Some(me), format!("The {} will follow you now.", def.name)),
     };
-    game.animals.get_mut(&id).expect("animal exists").tamed_by = new_owner;
+    game.animal_mut(id).tamed_by = new_owner;
     game.tell(conn, LogKind::Info, msg);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game::{Animal, Event};
+    use crate::game::Event;
     use crate::world::World;
     use idk_shared::content::{Species, Tile};
     use idk_shared::protocol::{ClientMsg, ServerMsg};
@@ -156,16 +154,15 @@ mod tests {
         let mut g = Game::new(World::new(5));
         let (tx, rx) = tokio::sync::mpsc::channel(crate::game::SEND_QUEUE);
         g.event(Event::Join { conn: 1, name: "alice".into(), tx }, now);
-        g.animals.clear();
+        g.clear_animals();
         let o = g.players[&1].pos;
         for y in -20..=20 {
             for x in -20..=20 {
                 g.world.set_tile(Pos::new(o.x + x, o.y + y), Tile::Grass);
             }
         }
-        let id = g.alloc_id();
         let pos = Pos::new(o.x + offset.0, o.y + offset.1);
-        g.animals.insert(id, Animal { id, species, pos, facing: Dir::South, tamed_by: None, next_step: now });
+        let id = g.insert_animal(species, pos, None, now).unwrap();
         (g, id, rx, now)
     }
 
@@ -179,14 +176,31 @@ mod tests {
     fn petting_a_dog_tames_it_and_it_follows() {
         let (mut g, dog, _rx, now) = setup(Species::Dog, (1, 0));
         g.event(Event::Msg(1, ClientMsg::Interact(Dir::East)), now);
-        assert_eq!(g.animals[&dog].tamed_by.as_deref(), Some("alice"));
+        assert_eq!(g.animals()[&dog].tamed_by.as_deref(), Some("alice"));
 
-        g.animals.get_mut(&dog).unwrap().pos.x += 12;
+        let p = g.animals()[&dog].pos();
+        g.move_animal(dog, Pos::new(p.x + 12, p.y));
         run(&mut g, now, 10);
-        assert!(g.animals[&dog].pos.dist(g.players[&1].pos) <= FOLLOW_DIST + 1);
+        assert!(g.animals()[&dog].pos().dist(g.players[&1].pos) <= FOLLOW_DIST + 1);
+        g.assert_animal_index();
 
         pet(&mut g, 1, dog);
-        assert_eq!(g.animals[&dog].tamed_by, None, "petting again releases it");
+        assert_eq!(g.animals()[&dog].tamed_by, None, "petting again releases it");
+    }
+
+    #[test]
+    fn teleport_and_wandering_keep_animal_index_consistent() {
+        let (mut g, dog, _rx, now) = setup(Species::Dog, (1, 0));
+        g.animal_mut(dog).tamed_by = Some("alice".into());
+        let player = g.players[&1].pos;
+        // Plus loin que TELEPORT_DIST : le chien est ramené à côté de sa maîtresse.
+        g.move_animal(dog, Pos::new(player.x + TELEPORT_DIST + 5, player.y));
+        g.assert_animal_index();
+        act(&mut g, dog, &[("alice".to_string(), player)], now);
+        assert!(g.animals()[&dog].pos().dist(player) <= 1);
+        g.assert_animal_index();
+        run(&mut g, now, 20);
+        g.assert_animal_index();
     }
 
     #[test]
@@ -194,11 +208,11 @@ mod tests {
         for seed_offset in 0..20 {
             let (mut g, cow, _rx, _now) = setup(Species::Cow, (5, 5));
             g.rng = crate::rng::Rng::new(seed_offset);
-            let pos = g.animals[&cow].pos;
+            let pos = g.animals()[&cow].pos();
             g.world.set_tile(pos.step(Dir::North), Tile::Wall);
             g.world.set_tile(pos.step(Dir::West), Tile::Wall);
             try_step(&mut g, cow, Dir::North);
-            assert_eq!(g.animals[&cow].pos, pos.step(Dir::East), "seed {seed_offset}");
+            assert_eq!(g.animals()[&cow].pos(), pos.step(Dir::East), "seed {seed_offset}");
         }
     }
 
@@ -209,7 +223,7 @@ mod tests {
             g.rng = crate::rng::Rng::new(seed);
             step(&mut g, now);
             // pas normal ≥ 900 ms × 0,75 ; une fuite le diviserait par 2
-            let delay = g.animals[&cow].next_step - now;
+            let delay = g.animals()[&cow].next_step - now;
             assert!(delay >= Duration::from_millis(675), "seed {seed}: {delay:?}");
         }
     }
@@ -217,18 +231,18 @@ mod tests {
     /// Compte, sur 200 pas, ceux où l'animal d'alice (hors ligne) se rapproche de bob, et ceux au délai de fuite.
     fn offline_owner_stats(species: Species) -> (u32, u32) {
         let (mut g, id, _rx, now) = setup(species, (0, 0));
-        g.animals.get_mut(&id).unwrap().tamed_by = Some("alice".into());
-        let start = g.animals[&id].pos;
+        g.animal_mut(id).tamed_by = Some("alice".into());
+        let start = g.animals()[&id].pos();
         let bob = Pos::new(start.x + 4, start.y);
         let players = [("bob".to_string(), bob)];
         let (mut closer, mut fled) = (0, 0);
         for i in 0..200 {
             g.rng = crate::rng::Rng::new(i);
-            g.animals.get_mut(&id).unwrap().pos = start;
+            g.move_animal(id, start);
             act(&mut g, id, &players, now);
-            closer += (g.animals[&id].pos.dist(bob) < start.dist(bob)) as u32;
+            closer += (g.animals()[&id].pos().dist(bob) < start.dist(bob)) as u32;
             // pas normal ≥ 0,75 × step_ms ; une fuite le diviserait par 2
-            let delay = g.animals[&id].next_step - now;
+            let delay = g.animals()[&id].next_step - now;
             fled += (delay < Duration::from_millis((species.def().ai.step_ms as f32 * 0.75) as u64)) as u32;
         }
         (closer, fled)
@@ -248,32 +262,21 @@ mod tests {
     fn rabbits_flee() {
         let (mut g, rabbit, _rx, now) = setup(Species::Rabbit, (2, 0));
         run(&mut g, now, 3);
-        assert!(g.animals[&rabbit].pos.dist(g.players[&1].pos) > 2);
+        assert!(g.animals()[&rabbit].pos().dist(g.players[&1].pos) > 2);
     }
 
     #[test]
     fn cows_cannot_be_tamed() {
         let (mut g, cow, _rx, now) = setup(Species::Cow, (0, 1));
         g.event(Event::Msg(1, ClientMsg::Interact(Dir::South)), now);
-        assert_eq!(g.animals[&cow].tamed_by, None);
+        assert_eq!(g.animals()[&cow].tamed_by, None);
     }
 
     #[test]
     fn entities_outside_view_are_not_sent() {
         let (mut g, far, mut rx, now) = setup(Species::Cow, (VIEW_TILES + 5, 0));
-        let near = g.alloc_id();
         let pos = g.players[&1].pos.step(Dir::East);
-        g.animals.insert(
-            near,
-            Animal {
-                id: near,
-                species: Species::Cow,
-                pos,
-                facing: Dir::South,
-                tamed_by: None,
-                next_step: now,
-            },
-        );
+        let near = g.insert_animal(Species::Cow, pos, None, now).unwrap();
         g.tick(now);
         let mut last = None;
         while let Ok(msg) = rx.try_recv() {
