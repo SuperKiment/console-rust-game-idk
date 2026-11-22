@@ -235,8 +235,7 @@ impl Game {
                 self.break_tile(conn, target);
             }
             ClientMsg::Chat(text) => {
-                let text: String = text.trim().chars().filter(|c| !c.is_control()).take(MAX_CHAT).collect();
-                if !text.is_empty() {
+                if let Some(text) = clean_chat(&text) {
                     let from = p.name.clone();
                     self.broadcast(ServerMsg::Log(LogLine::new(LogKind::Chat { from }, text)));
                 }
@@ -404,6 +403,15 @@ impl Game {
     }
 }
 
+/// Message de chat : sans caractères de contrôle, sans espaces aux bords, au plus `MAX_CHAT`
+/// caractères. `None` si rien ne reste.
+fn clean_chat(raw: &str) -> Option<String> {
+    let filtered: String = raw.chars().filter(|c| !c.is_control()).collect();
+    let text: String = filtered.trim().chars().take(MAX_CHAT).collect();
+    let text = text.trim_end();
+    if text.is_empty() { None } else { Some(text.to_string()) }
+}
+
 /// Nom d'affichage : sans caractères de contrôle, sans espaces aux bords, au plus `MAX_NAME` caractères.
 fn clean_name(raw: &str) -> String {
     let filtered: String = raw.chars().filter(|c| !c.is_control()).collect();
@@ -487,6 +495,14 @@ mod tests {
         }
         assert!(g.players.is_empty(), "slow client dropped");
         assert!(g.offline.contains_key("slow"), "position kept for its return");
+    }
+
+    #[test]
+    fn chat_is_cleaned() {
+        assert_eq!(clean_chat("\x07 hi").as_deref(), Some("hi"));
+        assert_eq!(clean_chat("hi \x07").as_deref(), Some("hi"));
+        assert_eq!(clean_chat("\x07\x07 "), None);
+        assert_eq!(clean_chat(&"é".repeat(300)).unwrap().chars().count(), MAX_CHAT);
     }
 
     #[test]
