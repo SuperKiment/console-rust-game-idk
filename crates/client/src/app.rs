@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use crossterm::event::{Event, EventStream, KeyCode, KeyEventKind};
 use futures::StreamExt;
-use idk_shared::protocol::{ClientMsg, LogKind, LogLine};
+use idk_shared::protocol::{ClientMsg, LogKind, LogLine, MAX_CHAT};
 use ratatui::DefaultTerminal;
 use tokio::sync::mpsc::{self, UnboundedSender};
 
@@ -14,7 +14,6 @@ use crate::net::{self, NetEvent};
 use crate::state::GameState;
 
 const FRAME: Duration = Duration::from_millis(33);
-const MAX_CHAT: usize = 240;
 const NOT_CONNECTED: &str = "Not connected.";
 /// Délai max entre deux Esc pour confirmer la sortie.
 const QUIT_CONFIRM: Duration = Duration::from_secs(2);
@@ -157,7 +156,7 @@ impl App {
                 KeyCode::Backspace => {
                     text.pop();
                 }
-                KeyCode::Char(c) if text.chars().count() < MAX_CHAT => text.push(c),
+                KeyCode::Char(c) if !c.is_control() && text.chars().count() < MAX_CHAT => text.push(c),
                 _ => {}
             },
             Mode::Play => {

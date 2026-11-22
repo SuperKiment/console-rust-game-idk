@@ -17,6 +17,18 @@ pub const VIEW_CHUNKS: i32 = 3;
 pub const KEEP_CHUNKS: i32 = VIEW_CHUNKS + 1;
 /// Longueur max d'un nom de joueur : le serveur tronque au-delà, l'assistant client bride la saisie.
 pub const MAX_NAME: usize = 16;
+/// Longueur max d'un message de chat : le serveur tronque au-delà, le client bride la saisie.
+pub const MAX_CHAT: usize = 240;
+
+/// Nom d'affichage : sans caractères de contrôle, sans espaces aux bords, au plus `MAX_NAME`
+/// caractères, `player` si rien ne reste. Le serveur et le client l'appliquent : même nom partout.
+pub fn clean_name(raw: &str) -> String {
+    let filtered: String = raw.chars().filter(|c| !c.is_control()).collect();
+    let name: String = filtered.trim().chars().take(MAX_NAME).collect();
+    // Le `take` peut laisser un espace en fin de nom (ex. "abc def" coupé après l'espace).
+    let name = name.trim_end();
+    if name.is_empty() { "player".to_string() } else { name.to_string() }
+}
 
 /// Identifier of anything that moves (players and animals share the id space).
 pub type EntityId = u32;
@@ -118,5 +130,19 @@ pub enum LogKind {
 impl LogLine {
     pub fn new(kind: LogKind, text: impl Into<String>) -> Self {
         Self { kind, text: text.into() }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn names_are_cleaned() {
+        assert_eq!(clean_name("  bob "), "bob");
+        assert_eq!(clean_name("a "), "a");
+        assert_eq!(clean_name(" "), "player");
+        assert_eq!(clean_name("abcdefghijklmno pqrst"), "abcdefghijklmno");
+        assert_eq!(clean_name(&"é".repeat(40)).chars().count(), MAX_NAME);
     }
 }

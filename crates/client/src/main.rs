@@ -71,6 +71,8 @@ async fn start(
     if let Some(n) = args.name {
         config.name = n;
     }
+    // Même nettoyage que le serveur : le panneau `you` affiche le nom que les autres voient.
+    config.name = idk_shared::protocol::clean_name(&config.name);
     config.incognito |= args.incognito;
     app::run(terminal, config).await
 }
