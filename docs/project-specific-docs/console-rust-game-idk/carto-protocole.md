@@ -41,7 +41,7 @@ Définis dans `crates/shared/src/protocol.rs`.
 | `Log(LogLine)` | ligne de journal (`System`, `Info`, `Chat`, `Animal`) |
 | `Effect { pos, effect }` | effet visuel éphémère |
 | `Online(Vec<(String, u8)>)` | joueurs connectés `(nom, couleur)`, à chaque arrivée et départ |
-| `Rejected(String)` | refus (versions différentes, handshake invalide `bad handshake, update your client`, ou session remplacée : `replaced by new connection`) ; le serveur ferme ensuite le socket |
+| `Rejected(String)` | refus (versions différentes, handshake invalide `bad handshake, update your client`, ou session remplacée : `name <nom> used by a new connection`) ; le serveur ferme ensuite le socket |
 
 ## Séquence de connexion
 
@@ -76,7 +76,7 @@ Le point clé : `Entities` est le seul message périodique. Les chunks ne sont e
 - Premier message illisible (décodage impossible) ou différent de `Hello` : `Rejected("bad handshake, update your client")` puis fermeture. Timeout du `Hello` ou connexion fermée par le client : fermeture sans message.
 - Un `Hello` hors du premier message est ignoré.
 - Nom : caractères de contrôle supprimés puis espaces des bords retirés, 16 caractères max, `player` si vide (`clean_name`).
-- Nom déjà connecté : la nouvelle connexion **remplace** l'ancienne (plus de suffixe `2`, `3`…). L'ancienne reçoit `Rejected("replaced by new connection")` puis est fermée ; la nouvelle reprend l'id, la position et l'orientation (les animaux apprivoisés sont liés au nom, ils suivent donc). Le `Leave` tardif de l'ancienne connexion est sans effet : `Game.players` est indexé par `ConnId`.
+- Nom déjà connecté : la nouvelle connexion **remplace** l'ancienne (plus de suffixe `2`, `3`…). L'ancienne reçoit `Rejected("name <nom> used by a new connection")` puis est fermée ; la nouvelle reprend l'id, la position et l'orientation (les animaux apprivoisés sont liés au nom, ils suivent donc). Le `Leave` tardif de l'ancienne connexion est sans effet : `Game.players` est indexé par `ConnId`.
 - Les messages `ClientMsg` d'une connexion non enregistrée dans `Game` sont ignorés.
 
 ## Keepalive et timeouts
@@ -93,7 +93,7 @@ File d'envoi serveur par client : `mpsc::channel(SEND_QUEUE)` = 256 messages. En
 
 ## Côté client
 
-`crates/client/src/net.rs` : une tâche en boucle de reconnexion (pause de 2 s). `Rejected` est le seul cas sans nouvel essai (y compris `replaced by new connection`). Une coupure détectée par le silence de 5 s ou le timeout de `connect` repart en reconnexion. À `Welcome`, `GameState` est remis à zéro (le journal est conservé). Détails dans [client/carto-architecture.md](client/carto-architecture.md).
+`crates/client/src/net.rs` : une tâche en boucle de reconnexion (pause de 2 s). `Rejected` est le seul cas sans nouvel essai (y compris `name <nom> used by a new connection`). Une coupure détectée par le silence de 5 s ou le timeout de `connect` repart en reconnexion. À `Welcome`, `GameState` est remis à zéro (le journal est conservé). Détails dans [client/carto-architecture.md](client/carto-architecture.md).
 
 ## Versionnement
 
