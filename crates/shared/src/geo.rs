@@ -105,15 +105,6 @@ impl Dir {
         }
     }
 
-    pub const fn opposite(self) -> Dir {
-        match self {
-            Dir::North => Dir::South,
-            Dir::South => Dir::North,
-            Dir::East => Dir::West,
-            Dir::West => Dir::East,
-        }
-    }
-
     pub const fn name(self) -> &'static str {
         match self {
             Dir::North => "north",

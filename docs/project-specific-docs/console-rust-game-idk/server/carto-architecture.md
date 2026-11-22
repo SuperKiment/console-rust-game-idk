@@ -9,8 +9,8 @@
 | 91-117 | Monde par chunks |
 | 118-124 | — Streaming de chunks |
 | 125-139 | IA des animaux (paramétrique) |
-| 140-162 | Sauvegarde |
-| 163-167 | Docs liées |
+| 140-164 | Sauvegarde |
+| 165-169 | Docs liées |
 # Serveur : architecture
 
 > Vérifié le 2026-11-22 depuis `crates/server/src/` (`lib.rs`, `main.rs`, `net.rs`, `game.rs`, `ai.rs`, `save.rs`, `rng.rs`, `world/`). Fiche : [vue-ensemble.md](vue-ensemble.md).
@@ -152,7 +152,9 @@ Priorité de décision dans `act` : animal apprivoisé trop loin (plus de `TELEP
 
 Déclencheurs (`crates/server/src/lib.rs`) : toutes les 60 s (`AUTOSAVE`), et à l'arrêt sur ctrl-c ou SIGTERM (`shutdown_signal` dans `main.rs`). Une erreur d'écriture est journalisée sans arrêter le serveur. Au démarrage : sauvegarde existante (graine ignorée) sinon nouveau monde avec `--seed` ou une graine tirée de l'horloge.
 
-Chargement : `save::decode` lit d'abord `version` seule (`postcard::take_from_bytes::<u32>`, premier champ de `SaveData`, varint), puis dispatche par `match`. Aujourd'hui un seul bras (`SAVE_VERSION` => décode `SaveData`) : pas de copie figée tant qu'une seule version existe.
+Chargement : `save::decode` lit d'abord `version` seule (`postcard::take_from_bytes::<u32>`, premier champ de `SaveData`, varint), puis dispatche par `match`. Aujourd'hui un seul bras (`SAVE_VERSION` => décode `SaveData`, puis `validate`) : pas de copie figée tant qu'une seule version existe.
+
+Validation au chargement (`save::validate`, appelée par `decode`) : chaque chunk de `chunks` doit avoir exactement `CHUNK_AREA` tuiles, sinon erreur « invalid chunk at (x, y) » (sinon panic d'index au premier accès). Un id de tuile inconnu est refusé par le décodage postcard (variante d'enum invalide). Le chargement renvoie donc `Err` (le serveur ne démarre pas) au lieu de paniquer plus tard.
 
 > [!WARNING]
 > Un changement incompatible du format doit ajouter une version (`version` doit rester le premier champ) :

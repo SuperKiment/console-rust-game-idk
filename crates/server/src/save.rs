@@ -5,7 +5,7 @@ use std::path::Path;
 use std::time::Instant;
 
 use idk_shared::content::{Species, Tile};
-use idk_shared::geo::{ChunkPos, Dir, Pos};
+use idk_shared::geo::{CHUNK_AREA, ChunkPos, Dir, Pos};
 use idk_shared::protocol::EntityId;
 use serde::{Deserialize, Serialize};
 
@@ -72,9 +72,24 @@ pub fn read(dir: &Path) -> io::Result<Option<SaveData>> {
 fn decode(bytes: &[u8]) -> io::Result<SaveData> {
     let (version, _) = postcard::take_from_bytes::<u32>(bytes).map_err(io::Error::other)?;
     match version {
-        SAVE_VERSION => postcard::from_bytes(bytes).map_err(io::Error::other),
+        SAVE_VERSION => {
+            let data: SaveData = postcard::from_bytes(bytes).map_err(io::Error::other)?;
+            validate(&data)?;
+            Ok(data)
+        }
         v => Err(io::Error::other(format!("unsupported save version {v}"))),
     }
+}
+
+/// Refuse une save dont un chunk n'a pas `CHUNK_AREA` tuiles (sinon panic d'index au 1er accès).
+/// Un id de tuile inconnu est déjà refusé par le décodage postcard (variante d'enum invalide).
+fn validate(data: &SaveData) -> io::Result<()> {
+    for (cp, tiles) in &data.chunks {
+        if tiles.len() != CHUNK_AREA {
+            return Err(io::Error::other(format!("invalid chunk at ({}, {})", cp.x, cp.y)));
+        }
+    }
+    Ok(())
 }
 
 pub fn write(dir: &Path, data: &SaveData) -> io::Result<()> {
@@ -133,5 +148,29 @@ mod tests {
         // Version reconnue : l'erreur vient du décodage du reste, pas de la version.
         let err = decode(&bytes).err().unwrap();
         assert!(!err.to_string().contains("unsupported save version"));
+    }
+
+    #[test]
+    fn truncated_chunk_is_rejected() {
+        let mut data = sample();
+        data.chunks = vec![(ChunkPos::new(3, -2), vec![Tile::Grass; 10])];
+        let bytes = postcard::to_stdvec(&data).unwrap();
+        let err = decode(&bytes).err().unwrap();
+        assert_eq!(err.to_string(), "invalid chunk at (3, -2)");
+    }
+
+    #[test]
+    fn unknown_tile_id_is_rejected() {
+        let mut data = sample();
+        data.chunks = vec![(ChunkPos::new(0, 0), vec![Tile::Grass; CHUNK_AREA])];
+        let mut bytes = postcard::to_stdvec(&data).unwrap();
+        // Dernière tuile de la liste : Grass = 0 ; on la remplace par un id hors table.
+        // Après les tuiles viennent `spawned` (len 0) et `animals` (len 0) : 2 octets.
+        let i = bytes.len() - 3;
+        // < 128 : un seul octet en varint, l'erreur vient bien de l'enum et pas d'une troncature.
+        let ok = bytes.clone();
+        bytes[i] = 100;
+        assert!(decode(&ok).is_ok(), "témoin : la save non modifiée se charge");
+        assert!(decode(&bytes).is_err());
     }
 }
