@@ -104,12 +104,12 @@ stateDiagram-v2
 
 ## Layouts
 
-`ui::draw` choisit selon `App.incognito`, basculable à chaud par F2 (action `ToggleIncognito`), sans toucher à la connexion.
+`ui::draw` choisit selon `App.incognito`, basculable à chaud par F2 (action `ToggleIncognito`), sans toucher à la connexion. F2 reste actif en saisie de chat (`App::on_terminal` le traite avant le `match` sur le mode, le texte saisi est conservé).
 
 | | Normal (`ui/game.rs`) | Incognito (`ui/incognito.rs`) |
 |---|---|---|
 | Carte | couleurs de la table de contenu, jeu de glyphes de la config | monochrome gris, **toujours ASCII** (`GlyphSet::Ascii`) ; le sol praticable est laissé vide |
-| Cadre | panneaux `you`, `online`, `nearby`, `keys`, journal (au plus 9 lignes de haut, bordures comprises, réduit à un quart de la hauteur du terminal avec un minimum de 4 ; sidebar : `you` en priorité, puis `keys` entier ou masqué, puis `online` et `nearby` selon la place restante ; la graine s’affiche en hex court dans le titre de la carte seulement si la carte fait 40 colonnes ou plus) | barre d'onglets (`<biome>.rs`, `world.log`, `Cargo.toml`), gouttière de numéros de ligne = coordonnée y, panneau `OUTPUT` (8 lignes max en-tête compris, au plus un tiers de l'écran) |
+| Cadre | panneaux `you`, `online`, `nearby`, `keys`, journal (au plus 9 lignes de haut, bordures comprises, réduit à un quart de la hauteur du terminal avec un minimum de 4 ; sidebar : `you` en priorité, puis `keys` entier ou masqué, puis `online` et `nearby` selon la place restante ; la graine s’affiche en hex court dans le titre de la carte seulement si la carte fait 40 colonnes ou plus et si un `Welcome` a été reçu, donc jamais avant la 1re connexion) | barre d'onglets (`<biome>.rs`, `world.log`, `Cargo.toml`), gouttière de numéros de ligne = coordonnée y, panneau `OUTPUT` (8 lignes max en-tête compris, au plus un tiers de l'écran) |
 | Journal | heure locale `HH:MM:SS`, texte coloré par type, retour à la ligne des longs messages, saisie du chat défilée (fin du texte visible) | format de logs serveur : `ISO8601 NIVEAU message`, ISO8601 en heure locale avec fuseau (`Z` ou `±HH:MM`) ; `Animal` = DEBUG, départs (« left the world. ») et déconnexions (« Disconnected… ») = WARN, le reste INFO ; chat préfixé `[chat] <nom>` |
 | Barre d'état | popup centrée si non connecté | `NORMAL` / `INSERT` façon vim, `Ln y, Col x`, chat saisi comme ligne de commande `:`, `N users` et heure locale `HH:MM` à droite ; l'état de connexion s'affiche dans la barre (pas de popup) |
 | Aide des touches | panneau `keys`, généré depuis `BINDINGS` | aucune |

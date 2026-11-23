@@ -39,9 +39,10 @@ pub fn draw(f: &mut Frame, w: &Wizard) {
         WIDTH.min(area.width),
         HEIGHT.min(area.height),
     );
-    let block = super::bordered(w.glyphs)
-        .border_style(Style::new().fg(paint(t.border)))
-        .title(Span::styled(" idk · setup ", Style::new().fg(paint(t.title)).bold()));
+    let block = super::bordered(w.glyphs).border_style(Style::new().fg(paint(t.border))).title(Span::styled(
+        format!(" idk {} setup ", super::pick(w.glyphs, "·", "-")),
+        Style::new().fg(paint(t.title)).bold(),
+    ));
     let inner = block.inner(area).inner(ratatui::layout::Margin::new(2, 1));
     f.render_widget(block, area);
 
@@ -100,13 +101,13 @@ pub fn draw(f: &mut Frame, w: &Wizard) {
             lines.push(Line::styled("Player", accent));
             lines.extend(ask("Your in-game name", "Enter to confirm"));
             lines.push(Line::from(""));
-            lines.push(input_line(&w.name_input, &w.base.name, text, dim));
+            lines.push(input_line(w.glyphs, &w.name_input, &w.base.name, text, dim));
         }
         Step::Server => {
             lines.push(Line::styled("Server", accent));
             lines.extend(ask("Server address (host:port)", "Enter to confirm"));
             lines.push(Line::from(""));
-            lines.push(input_line(&w.server_input, &w.base.server, text, dim));
+            lines.push(input_line(w.glyphs, &w.server_input, &w.base.server, text, dim));
         }
         Step::Incognito => {
             lines.push(Line::styled("Incognito", accent));
@@ -189,12 +190,12 @@ fn gradient() -> Line<'static> {
 }
 
 /// Typed text with a cursor, or the dim default when nothing is typed yet.
-fn input_line(typed: &str, default: &str, text: Style, dim: Style) -> Line<'static> {
+fn input_line(glyphs: GlyphSet, typed: &str, default: &str, text: Style, dim: Style) -> Line<'static> {
     let (shown, style) = if typed.is_empty() { (default, dim) } else { (typed, text) };
     Line::from(vec![
         Span::styled("> ", text),
         Span::styled(shown.to_string(), style),
-        Span::styled("▏", text),
+        Span::styled(super::pick(glyphs, "▏", "_"), text),
     ])
 }
 
