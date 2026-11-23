@@ -45,7 +45,8 @@ pub fn draw(f: &mut Frame, app: &App) {
     // Map
     let s = &app.state;
     // Seed en hex court (8 caractères), seulement si le titre « idk » a la place
-    let online = if map_area.width >= SEED_MIN_WIDTH {
+    // Pas de seed avant le premier Welcome (elle reste connue hors ligne)
+    let online = if map_area.width >= SEED_MIN_WIDTH && (s.me.is_some() || s.is_offline()) {
         format!(" seed {:08x} {} {} online ", s.seed as u32, pick(g, "·", "-"), s.online.len())
     } else {
         format!(" {} online ", s.online.len())

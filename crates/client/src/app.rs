@@ -139,6 +139,11 @@ impl App {
             }
             return;
         }
+        // F2 bascule l'incognito aussi en saisie de chat, sans toucher au texte.
+        if matches!(self.mode, Mode::Chat(_)) && action_for(key) == Some(Action::ToggleIncognito) {
+            self.incognito = !self.incognito;
+            return;
+        }
         match &mut self.mode {
             Mode::Chat(text) => match key.code {
                 // Hors ligne : on garde le chat ouvert et son texte, rien n'est perdu.
@@ -245,6 +250,14 @@ mod tests {
     fn chat_text(app: &App) -> &str {
         let Mode::Chat(t) = &app.mode else { panic!("not in chat") };
         t
+    }
+
+    #[test]
+    fn f2_toggles_incognito_in_chat_and_keeps_text() {
+        let mut app = chat_app("salut");
+        app.on_terminal(Event::Key(KeyEvent::new(KeyCode::F(2), KeyModifiers::NONE)));
+        assert!(app.incognito);
+        assert_eq!(chat_text(&app), "salut");
     }
 
     #[test]
