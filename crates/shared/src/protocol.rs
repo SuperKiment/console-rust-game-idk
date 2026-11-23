@@ -20,10 +20,19 @@ pub const MAX_NAME: usize = 16;
 /// Longueur max d'un message de chat : le serveur tronque au-delà, le client bride la saisie.
 pub const MAX_CHAT: usize = 240;
 
-/// Nom d'affichage : sans caractères de contrôle, sans espaces aux bords, au plus `MAX_NAME`
+/// Caractère à ne jamais afficher dans un nom ou un chat : contrôle, ou format Unicode invisible
+/// ou qui inverse l'affichage (U+200B-200C, 200E-200F, 202A-202E, 2060-2064, 2066-2069, FEFF).
+/// U+200D (ZWJ) reste permis : il compose les emoji.
+pub fn is_hidden_char(c: char) -> bool {
+    c.is_control()
+        || matches!(c, '\u{200B}'..='\u{200C}' | '\u{200E}'..='\u{200F}' | '\u{202A}'..='\u{202E}'
+            | '\u{2060}'..='\u{2064}' | '\u{2066}'..='\u{2069}' | '\u{FEFF}')
+}
+
+/// Nom d'affichage : sans caractères cachés (`is_hidden_char`), sans espaces aux bords, au plus `MAX_NAME`
 /// caractères, `player` si rien ne reste. Le serveur et le client l'appliquent : même nom partout.
 pub fn clean_name(raw: &str) -> String {
-    let filtered: String = raw.chars().filter(|c| !c.is_control()).collect();
+    let filtered: String = raw.chars().filter(|&c| !is_hidden_char(c)).collect();
     let name: String = filtered.trim().chars().take(MAX_NAME).collect();
     // Le `take` peut laisser un espace en fin de nom (ex. "abc def" coupé après l'espace).
     let name = name.trim_end();
@@ -144,5 +153,12 @@ mod tests {
         assert_eq!(clean_name(" "), "player");
         assert_eq!(clean_name("abcdefghijklmno pqrst"), "abcdefghijklmno");
         assert_eq!(clean_name(&"é".repeat(40)).chars().count(), MAX_NAME);
+    }
+
+    #[test]
+    fn hidden_chars_are_dropped_but_zwj_kept() {
+        assert_eq!(clean_name("\u{200B}"), "player");
+        assert_eq!(clean_name("\u{202E}bob\u{FEFF}"), "bob");
+        assert_eq!(clean_name("a\u{200D}b"), "a\u{200D}b");
     }
 }

@@ -75,7 +75,7 @@ Le point clé : `Entities` est le seul message périodique. Les chunks ne sont e
 - `Hello` doit arriver en moins de `HELLO_TIMEOUT` (10 s), sinon la connexion est fermée en silence.
 - Premier message illisible (décodage impossible) ou différent de `Hello` : `Rejected("bad handshake, update your client")` puis fermeture. Timeout du `Hello` ou connexion fermée par le client : fermeture sans message.
 - Un `Hello` hors du premier message est ignoré.
-- Nom : caractères de contrôle supprimés puis espaces des bords retirés, 16 caractères max, `player` si vide (`clean_name`).
+- Nom : caractères de contrôle et de format Unicode invisibles ou d'inversion supprimés (`is_hidden_char`, ZWJ conservé) puis espaces des bords retirés, 16 caractères max, `player` si vide (`clean_name`).
 - Nom déjà connecté : la nouvelle connexion **remplace** l'ancienne (plus de suffixe `2`, `3`…). L'ancienne reçoit `Rejected("name <nom> used by a new connection")` puis est fermée ; la nouvelle reprend l'id, la position et l'orientation (les animaux apprivoisés sont liés au nom, ils suivent donc). Le `Leave` tardif de l'ancienne connexion est sans effet : `Game.players` est indexé par `ConnId`.
 - Les messages `ClientMsg` d'une connexion non enregistrée dans `Game` sont ignorés.
 

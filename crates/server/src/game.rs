@@ -9,6 +9,7 @@ use idk_shared::content::{Effect, Species, Tile, player_color_index};
 use idk_shared::geo::{CHUNK_SIZE, ChunkPos, Dir, Pos};
 use idk_shared::protocol::{
     ClientMsg, EntityId, EntityView, KEEP_CHUNKS, LogKind, LogLine, Look, MAX_CHAT, ServerMsg, VIEW_CHUNKS,
+    is_hidden_char,
 };
 use tokio::sync::mpsc::Sender;
 use tokio::sync::mpsc::error::TrySendError;
@@ -25,6 +26,8 @@ pub const VIEW_TILES: i32 = VIEW_CHUNKS * CHUNK_SIZE;
 pub const SEND_QUEUE: usize = 256;
 /// Rayon maximal (en tuiles) de la recherche d'une tuile praticable à la connexion.
 const MAX_SPAWN_SEARCH: i32 = 32;
+/// Rayon (tuiles) de recherche d'une place libre pour un animal prévu dont la tuile est prise.
+const SPAWN_SLIDE: i32 = 2;
 
 /// What the network layer reports to the game.
 pub enum Event {
@@ -428,7 +431,7 @@ impl Game {
         let entering: Vec<ChunkPos> = center.around(VIEW_CHUNKS).filter(|cp| !p.sent.contains(cp)).collect();
         for cp in entering {
             for (species, pos) in self.world.load(cp) {
-                self.insert_animal(species, pos, None, now);
+                self.place_spawned_animal(species, pos, now);
             }
             let data = self.world.chunk_data(cp);
             let p = self.players.get_mut(&conn).expect("checked above");
@@ -437,6 +440,29 @@ impl Game {
         }
         let p = self.players.get_mut(&conn).expect("checked above");
         p.sent.retain(|c| c.dist(center) <= KEEP_CHUNKS);
+    }
+
+    /// Place un animal prévu par la génération. Le chunk est déjà marqué peuplé : si la tuile est
+    /// prise par un animal errant, on prend la tuile libre la plus proche (rayon `SPAWN_SLIDE`),
+    /// sinon l'animal est perdu.
+    fn place_spawned_animal(&mut self, species: Species, pos: Pos, now: Instant) {
+        if self.insert_animal(species, pos, None, now).is_some() {
+            return;
+        }
+        for r in 1..=SPAWN_SLIDE {
+            for dy in -r..=r {
+                for dx in -r..=r {
+                    let p = Pos::new(pos.x + dx, pos.y + dy);
+                    if dx.abs().max(dy.abs()) == r
+                        && crate::ai::free(self, p)
+                        && self.insert_animal(species, p, None, now).is_some()
+                    {
+                        return;
+                    }
+                }
+            }
+        }
+        tracing::debug!(?species, ?pos, "spawned animal dropped: no free tile nearby");
     }
 
     /// Sends each player the entities in its view; only those are cloned.
@@ -460,10 +486,10 @@ impl Game {
     }
 }
 
-/// Message de chat : sans caractères de contrôle, sans espaces aux bords, au plus `MAX_CHAT`
+/// Message de chat : sans caractères de contrôle ni de format Unicode (`is_hidden_char`), sans espaces aux bords, au plus `MAX_CHAT`
 /// caractères. `None` si rien ne reste.
 fn clean_chat(raw: &str) -> Option<String> {
-    let filtered: String = raw.chars().filter(|c| !c.is_control()).collect();
+    let filtered: String = raw.chars().filter(|&c| !is_hidden_char(c)).collect();
     let text: String = filtered.trim().chars().take(MAX_CHAT).collect();
     let text = text.trim_end();
     if text.is_empty() { None } else { Some(text.to_string()) }
@@ -561,6 +587,32 @@ mod tests {
         assert_eq!(g.animals().len(), 1);
         g.move_animal(id, b);
         assert_eq!((g.animal_at(a), g.animal_at(b)), (None, Some(id)));
+        g.assert_animal_index();
+    }
+
+    #[test]
+    fn chat_drops_format_chars_but_keeps_zwj() {
+        assert_eq!(clean_chat("a\u{202E}b").as_deref(), Some("ab"));
+        assert_eq!(clean_chat("\u{200B}\u{FEFF}"), None);
+        assert_eq!(clean_chat("a\u{200D}b").as_deref(), Some("a\u{200D}b"));
+    }
+
+    #[test]
+    fn spawned_animal_slides_to_free_neighbour_tile() {
+        let now = Instant::now();
+        let mut g = Game::new(World::new(5));
+        let cp = ChunkPos { x: 40, y: 40 };
+        // Chunk frais : on lit le spawn prévu sur un monde jumeau (même seed, génération pure).
+        let planned = World::new(5).load(cp);
+        let (species, pos) = planned[0];
+        // Un errant occupe la tuile de spawn avant le chargement du chunk.
+        let squatter = g.insert_animal(Species::Dog, pos, None, now).unwrap();
+        for (s, p) in g.world.load(cp) {
+            g.place_spawned_animal(s, p, now);
+        }
+        assert_eq!(g.animal_at(pos), Some(squatter));
+        let near = g.animals().values().filter(|a| a.species == species && a.pos().dist(pos) <= SPAWN_SLIDE);
+        assert!(near.count() >= 1, "l'espèce prévue existe à côté");
         g.assert_animal_index();
     }
 

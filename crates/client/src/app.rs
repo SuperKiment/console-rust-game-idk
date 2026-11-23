@@ -161,7 +161,11 @@ impl App {
                 KeyCode::Backspace => {
                     text.pop();
                 }
-                KeyCode::Char(c) if !c.is_control() && text.chars().count() < MAX_CHAT => text.push(c),
+                KeyCode::Char(c)
+                    if !idk_shared::protocol::is_hidden_char(c) && text.chars().count() < MAX_CHAT =>
+                {
+                    text.push(c)
+                }
                 _ => {}
             },
             Mode::Play => {
