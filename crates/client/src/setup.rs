@@ -101,7 +101,7 @@ impl Wizard {
             }
             (KeyCode::Backspace, _) => self.back(),
             (KeyCode::Char(c), Some((text, max))) => {
-                if !c.is_control() && text.chars().count() < max {
+                if !idk_shared::protocol::is_hidden_char(c) && text.chars().count() < max {
                     text.push(c);
                 }
             }
