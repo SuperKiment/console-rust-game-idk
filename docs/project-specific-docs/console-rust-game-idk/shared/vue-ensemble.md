@@ -24,7 +24,7 @@ Source de vérité du contenu (une ligne de table = variante + définition) et d
 
 ## Tests
 
-Tests unitaires dans `src/net.rs` (aller-retour TCP), `src/content/mod.rs` (glyphes larges, biomes valides), `src/content/biomes.rs` (`elevation_bands_cover_range`), `src/geo.rs` (géométrie). `cargo test -p idk-shared`.
+Tests unitaires dans `src/net.rs` (aller-retour TCP), `src/content/mod.rs` (glyphes larges, biomes valides), `src/content/biomes.rs` (`elevation_bands_cover_range`, `climate_picks_nearest`), `src/geo.rs` (géométrie), `src/protocol.rs` (`clean_name`). `cargo test -p idk-shared`.
 
 ## Docs liées
 

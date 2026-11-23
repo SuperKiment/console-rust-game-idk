@@ -3,15 +3,15 @@
 |---|---|
 | 19-32 | Modules |
 | 33-55 | Boucle de jeu |
-| 56-68 | — Tick (20 Hz) |
-| 69-76 | — Actions des joueurs |
-| 77-85 | — Animaux et index de tuiles |
-| 86-100 | — Sessions et déconnexions |
-| 101-127 | Monde par chunks |
-| 128-134 | — Streaming de chunks |
-| 135-151 | IA des animaux (paramétrique) |
-| 152-179 | Sauvegarde |
-| 180-184 | Docs liées |
+| 56-67 | — Tick (20 Hz) |
+| 68-75 | — Actions des joueurs |
+| 76-84 | — Animaux et index de tuiles |
+| 85-99 | — Sessions et déconnexions |
+| 100-126 | Monde par chunks |
+| 127-133 | — Streaming de chunks |
+| 134-150 | IA des animaux (paramétrique) |
+| 151-178 | Sauvegarde |
+| 179-183 | Docs liées |
 # Serveur : architecture
 
 > Vérifié le 2026-11-22 depuis `crates/server/src/` (`lib.rs`, `main.rs`, `net.rs`, `game.rs`, `ai.rs`, `save.rs`, `rng.rs`, `world/`). Fiche : [vue-ensemble.md](vue-ensemble.md).
@@ -61,7 +61,6 @@ flowchart LR
 2. **IA** : `ai::step`.
 3. **Streaming de chunks** : `stream_chunks` pour chaque joueur.
 4. **Entités** : `send_entities` envoie à chaque joueur les entités à moins de `VIEW_TILES` (96 tuiles). Le filtre par distance passe avant le clonage : seules les entités visibles sont copiées.
-
 5. **File pleine** : un joueur dont la file d'envoi a débordé pendant le tick est déconnecté (`leave`), voir « Sessions et déconnexions ».
 
 Un `Move` reçu hors cooldown (`MOVE_COOLDOWN` = 90 ms) s'exécute tout de suite dans `handle`. Sinon, il est mémorisé en `pending_move` (un seul, le dernier) pour le prochain tick.
