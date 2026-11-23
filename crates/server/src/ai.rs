@@ -91,7 +91,7 @@ fn wander(game: &mut Game, idle: f32) -> Option<Dir> {
     if game.rng.chance(idle) { None } else { game.rng.pick(&Dir::ALL).copied() }
 }
 
-fn free(game: &mut Game, pos: Pos) -> bool {
+pub(crate) fn free(game: &mut Game, pos: Pos) -> bool {
     game.world.tile(pos).def().walkable && game.animal_at(pos).is_none() && !game.player_at(pos)
 }
 

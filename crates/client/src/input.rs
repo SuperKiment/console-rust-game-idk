@@ -68,7 +68,7 @@ pub fn push_pasted(text: &mut String, pasted: &str, max: usize) {
         pasted
             .chars()
             .map(|c| if matches!(c, '\r' | '\n') { ' ' } else { c })
-            .filter(|c| !c.is_control())
+            .filter(|&c| !idk_shared::protocol::is_hidden_char(c))
             .take(room),
     );
 }
