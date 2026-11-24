@@ -131,6 +131,8 @@ impl App {
             NetEvent::Rejected(reason) => {
                 // Esc doit quitter, pas seulement fermer le chat
                 self.mode = Mode::Play;
+                self.state.push_log(LogLine::new(LogKind::System, format!("Rejected: {reason}")));
+                self.state.disconnect();
                 self.status = Status::Rejected(reason);
             }
         }
@@ -150,6 +152,10 @@ impl App {
         };
         if key.kind == KeyEventKind::Release {
             return;
+        }
+        // Seuls deux Esc consécutifs quittent : toute autre touche désarme.
+        if key.code != KeyCode::Esc {
+            self.quit_armed = None;
         }
         // Ctrl+C quitte aussi en chat ; les autres Ctrl/Alt/Super + touche sont ignorés.
         if matches!(self.mode, Mode::Chat(_)) && has_modifier(key) {
@@ -294,6 +300,17 @@ mod tests {
         app.confirm_quit(t);
         app.confirm_quit(t + Duration::from_millis(500));
         assert!(app.quit);
+    }
+
+    #[test]
+    fn other_key_disarms_quit() {
+        let mut app = App::for_test(Status::Online);
+        app.on_terminal(Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)));
+        assert!(app.quit_armed.is_some());
+        app.on_terminal(Event::Key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE)));
+        assert!(app.quit_armed.is_none());
+        app.on_terminal(Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)));
+        assert!(!app.quit);
     }
 
     #[test]

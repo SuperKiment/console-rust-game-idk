@@ -8,9 +8,9 @@
 | 91-105 | GameState |
 | 106-121 | Layouts |
 | 122-142 | Chaîne glyphes et couleurs |
-| 143-163 | Assistant de configuration |
-| 164-169 | Table BINDINGS |
-| 170-174 | Docs liées |
+| 143-164 | Assistant de configuration |
+| 165-170 | Table BINDINGS |
+| 171-175 | Docs liées |
 # Client : architecture
 
 > Vérifié le 2026-11-22 depuis `crates/client/src/` (`main.rs`, `app.rs`, `net.rs`, `state.rs`, `input.rs`, `config.rs`, `setup.rs`, `ui/`). Fiche : [vue-ensemble.md](vue-ensemble.md).
@@ -64,7 +64,7 @@ Nom par défaut (`config::default_name`) : `$USER` s'il est non vide, sinon `pla
 
 Aucune simulation côté client : l'écran n'est que le reflet du dernier état reçu. Les actions ne sont envoyées que si `Status::Online`.
 
-Modes de saisie : `Mode::Play` (touches via `BINDINGS`) et `Mode::Chat(String)` (Entrée envoie, Échap annule, 240 caractères max ; Ctrl/Alt/Super + touche ignorés sauf Ctrl+C qui quitte ; un collage devient une ligne unique, retours à la ligne remplacés par des espaces, jamais envoyée toute seule). Esc en jeu (`ConfirmQuit`) : le premier Esc journalise « Press Esc again to quit. », un second dans les 2 s (`QUIT_CONFIRM`) quitte ; statut `Rejected` : un seul Esc quitte. Ctrl+C quitte tout de suite.
+Modes de saisie : `Mode::Play` (touches via `BINDINGS`) et `Mode::Chat(String)` (Entrée envoie, Échap annule, 240 caractères max ; Ctrl/Alt/Super + touche ignorés sauf Ctrl+C qui quitte ; un collage devient une ligne unique, retours à la ligne remplacés par des espaces, jamais envoyée toute seule). Esc en jeu (`ConfirmQuit`) : le premier Esc journalise « Press Esc again to quit. », un second dans les 2 s (`QUIT_CONFIRM`) quitte ; statut `Rejected` : un seul Esc quitte (l'événement `Rejected` écrit « Rejected: <raison> » au journal et vide l'état de jeu comme une déconnexion). Ctrl+C quitte tout de suite.
 
 ## Connexion et reconnexion
 
@@ -110,7 +110,7 @@ stateDiagram-v2
 | | Normal (`ui/game.rs`) | Incognito (`ui/incognito.rs`) |
 |---|---|---|
 | Carte | couleurs de la table de contenu, jeu de glyphes de la config | monochrome gris, **toujours ASCII** (`GlyphSet::Ascii`) ; le sol praticable est laissé vide |
-| Cadre | panneaux `you`, `online`, `nearby`, `keys`, journal (au plus 9 lignes de haut, bordures comprises, réduit à un quart de la hauteur du terminal avec un minimum de 4 ; sidebar : `you` en priorité, puis `keys` entier ou masqué, puis `online` et `nearby` selon la place restante ; la graine s’affiche en hex court dans le titre de la carte seulement si la carte fait 40 colonnes ou plus et si un `Welcome` a été reçu, donc jamais avant la 1re connexion) | barre d'onglets (`<biome>.rs`, `world.log`, `Cargo.toml`), gouttière de numéros de ligne = coordonnée y, panneau `OUTPUT` (8 lignes max en-tête compris, au plus un tiers de l'écran) |
+| Cadre | panneaux `you`, `online`, `nearby`, `keys`, journal (au plus 9 lignes de haut, bordures comprises, réduit à un quart de la hauteur du terminal avec un minimum de 4 ; sidebar masquée si le terminal fait moins de 52 colonnes (20 de carte + 32), la carte prend alors toute la largeur ; sidebar : `you` en priorité, puis `keys` entier ou masqué, puis `online` et `nearby` selon la place restante ; la graine s’affiche en hex court dans le titre de la carte seulement si la carte fait 40 colonnes ou plus et si un `Welcome` a été reçu, donc jamais avant la 1re connexion) | barre d'onglets (`<biome>.rs`, `world.log`, `Cargo.toml`), gouttière de numéros de ligne = coordonnée y, panneau `OUTPUT` (8 lignes max en-tête compris, au plus un tiers de l'écran) |
 | Journal | heure locale `HH:MM:SS`, texte coloré par type, retour à la ligne des longs messages, saisie du chat défilée (fin du texte visible) | format de logs serveur : `ISO8601 NIVEAU message`, ISO8601 en heure locale avec fuseau (`Z` ou `±HH:MM`) ; `Animal` = DEBUG, départs (« left the world. ») et déconnexions (« Disconnected… ») = WARN, le reste INFO ; chat préfixé `[chat] <nom>` |
 | Barre d'état | popup centrée si non connecté | `NORMAL` / `INSERT` façon vim, `Ln y, Col x`, chat saisi comme ligne de commande `:`, `N users` et heure locale `HH:MM` à droite ; l'état de connexion s'affiche dans la barre (pas de popup) |
 | Aide des touches | panneau `keys`, généré depuis `BINDINGS` | aucune |
@@ -157,7 +157,8 @@ flowchart TD
 
 - Non à la première question : jeu `Ascii`, les deux questions emoji sont sautées.
 - Réponse non à la largeur des emoji : jeu `Unicode`.
-- Nom et serveur : saisie libre (`MAX_NAME` = 16, partagé avec le serveur, et 64 caractères max ; collage accepté sur une ligne) ; vide = valeur par défaut de la config de départ (celle sauvegardée, ou `Config::default`).
+- Nom et serveur : saisie libre (`MAX_NAME` = 16, partagé avec le serveur, et 64 caractères max ; collage accepté sur une ligne) ; vide = valeur par défaut de la config de départ (celle sauvegardée, ou `Config::default`). Une adresse serveur contenant un espace est refusée (`Wizard.error`, affiché sous le champ, effacé à la touche suivante).
+- Terminal trop bas : `ui/setup.rs` retire d'abord les parties décoratives (aperçus de carte, échantillon de cadre, lignes vides), puis coupe le haut ; la question et la ligne de touches restent visibles.
 - Retour arrière : à vide dans un champ texte ou hors champ, revient à la question précédente effectivement posée (les étapes sautées ne sont pas dans l'historique).
 - Échap ou Ctrl+C : `Outcome::Cancel`, quitte sans sauvegarder.
 
