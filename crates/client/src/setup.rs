@@ -49,6 +49,8 @@ pub struct Wizard {
     /// What the user typed; empty means "keep the default from `base`".
     pub name_input: String,
     pub server_input: String,
+    /// Message d'erreur de l'étape en cours (saisie refusée), effacé à la frappe suivante.
+    pub error: Option<&'static str>,
 }
 
 impl Wizard {
@@ -61,6 +63,7 @@ impl Wizard {
             incognito: base.incognito,
             name_input: String::new(),
             server_input: String::new(),
+            error: None,
             base,
         }
     }
@@ -95,6 +98,7 @@ impl Wizard {
         if matches!(key.code, KeyCode::Char(_)) && crate::input::has_modifier(key) {
             return Outcome::Continue;
         }
+        self.error = None;
         match (key.code, self.input()) {
             (KeyCode::Backspace, Some((text, _))) if !text.is_empty() => {
                 text.pop();
@@ -160,6 +164,9 @@ impl Wizard {
                 self.go(Step::Name);
             }
             (Step::Name, '\n') => self.go(Step::Server),
+            (Step::Server, '\n') if self.server().trim().contains(char::is_whitespace) => {
+                self.error = Some("The address cannot contain spaces");
+            }
             (Step::Server, '\n') => self.go(Step::Incognito),
             (Step::Incognito, 'y' | 'n' | '\n') => {
                 if key != '\n' {
@@ -313,6 +320,22 @@ mod tests {
         let Outcome::Done(c) = key(&mut w, KeyCode::Enter) else { panic!("not done") };
         assert_eq!((c.name.as_str(), c.server.as_str()), ("zed", "10.0.0.1:1"));
         assert_eq!((c.glyphs, c.colors, c.incognito), (GlyphSet::Wide, ColorDepth::Truecolor, true));
+    }
+
+    #[test]
+    fn server_with_space_is_refused() {
+        let mut w = wizard();
+        w.step = Step::Server;
+        press(&mut w, "a b");
+        key(&mut w, KeyCode::Enter);
+        assert!(w.step == Step::Server && w.error.is_some());
+        key(&mut w, KeyCode::Backspace);
+        assert!(w.error.is_none());
+        key(&mut w, KeyCode::Backspace);
+        key(&mut w, KeyCode::Backspace);
+        press(&mut w, "b");
+        key(&mut w, KeyCode::Enter);
+        assert_eq!(w.step, Step::Incognito);
     }
 
     #[test]

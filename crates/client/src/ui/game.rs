@@ -20,6 +20,7 @@ use crate::input::BINDINGS;
 use crate::state::{shifted, utc_offset};
 
 const SIDEBAR: u16 = 32;
+const MAP_MIN_WIDTH: u16 = 20;
 const LOG_HEIGHT: u16 = 9;
 const SEED_MIN_WIDTH: u16 = 40;
 const LOG_MIN_HEIGHT: u16 = 4;
@@ -34,7 +35,13 @@ pub fn draw(f: &mut Frame, app: &App) {
     // Journal : au plus un quart de la hauteur, jamais sous LOG_MIN_HEIGHT
     let log_h = (f.area().height / 4).clamp(LOG_MIN_HEIGHT, LOG_HEIGHT);
     let [main, log] = Layout::vertical([Constraint::Min(8), Constraint::Length(log_h)]).areas(f.area());
-    let [map_area, side] = Layout::horizontal([Constraint::Min(20), Constraint::Length(SIDEBAR)]).areas(main);
+    // Terminal étroit : pas de sidebar, la carte prend toute la largeur.
+    let wide = main.width >= MAP_MIN_WIDTH + SIDEBAR;
+    let [map_area, side] = if wide {
+        Layout::horizontal([Constraint::Min(MAP_MIN_WIDTH), Constraint::Length(SIDEBAR)]).areas(main)
+    } else {
+        [main, Rect::default()]
+    };
 
     let block = |title: &str| {
         bordered(g)

@@ -55,18 +55,22 @@ pub fn draw(f: &mut Frame, w: &Wizard) {
     };
 
     let mut lines: Vec<Line> = Vec::new();
-    // Lignes d'aperçu de carte : retirées si le terminal est trop bas, la ligne de touches reste visible.
+    // Lignes décoratives (aperçus de carte, échantillon de cadre, lignes vides) : retirées si le
+    // terminal est trop bas ; la question et la ligne de touches (`ask`) restent visibles.
     let mut previews: Vec<std::ops::Range<usize>> = Vec::new();
     match w.step {
         Step::Unicode => {
             lines.push(Line::styled("Unicode symbols", accent));
             lines.push(Line::from(""));
+            previews.push(1..2);
             lines.push(symbols_line(
                 w,
                 &[Tile::Tree, Tile::Pine, Tile::Water, Tile::Flowers, Tile::Rock, Tile::Grass],
             ));
+            let start = lines.len();
             lines.push(Line::from(""));
             lines.extend(frame_lines(w));
+            previews.push(start..lines.len());
             lines.extend(ask("Do these symbols display correctly?", "(y) yes   (n) no"));
         }
         Step::EmojiWidth => {
@@ -108,6 +112,9 @@ pub fn draw(f: &mut Frame, w: &Wizard) {
             lines.extend(ask("Server address (host:port)", "Enter to confirm"));
             lines.push(Line::from(""));
             lines.push(input_line(w.glyphs, &w.server_input, &w.base.server, text, dim));
+            if let Some(e) = w.error {
+                lines.push(Line::styled(e, accent));
+            }
         }
         Step::Incognito => {
             lines.push(Line::styled("Incognito", accent));
@@ -138,12 +145,17 @@ pub fn draw(f: &mut Frame, w: &Wizard) {
             lines.push(Line::styled("Enter: save", accent));
         }
     }
-    if lines.len() > body.height as usize {
+    // Hauteur réelle : une ligne plus large que le corps passe sur plusieurs lignes.
+    let width = (body.width as usize).max(1);
+    let rows = |lines: &[Line]| -> usize { lines.iter().map(|l| l.width().div_ceil(width).max(1)).sum() };
+    if rows(&lines) > body.height as usize {
         for r in previews.into_iter().rev() {
             lines.drain(r);
         }
     }
-    f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), body);
+    // Encore trop haut : on coupe le haut (titre), la question et les touches restent en bas.
+    let overflow = rows(&lines).saturating_sub(body.height as usize) as u16;
+    f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }).scroll((overflow, 0)), body);
 
     let back = if w.step == Step::Unicode { "" } else { "   Backspace: back" };
     f.render_widget(
