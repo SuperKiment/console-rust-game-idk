@@ -3,14 +3,14 @@
 |---|---|
 | 18-34 | Modules |
 | 35-53 | Démarrage |
-| 54-67 | Boucle principale |
-| 68-89 | Connexion et reconnexion |
-| 90-104 | GameState |
-| 105-120 | Layouts |
-| 121-141 | Chaîne glyphes et couleurs |
-| 142-163 | Assistant de configuration |
-| 164-169 | Table BINDINGS |
-| 170-174 | Docs liées |
+| 54-68 | Boucle principale |
+| 69-90 | Connexion et reconnexion |
+| 91-105 | GameState |
+| 106-121 | Layouts |
+| 122-142 | Chaîne glyphes et couleurs |
+| 143-164 | Assistant de configuration |
+| 165-170 | Table BINDINGS |
+| 171-175 | Docs liées |
 # Client : architecture
 
 > Vérifié le 2026-11-22 depuis `crates/client/src/` (`main.rs`, `app.rs`, `net.rs`, `state.rs`, `input.rs`, `config.rs`, `setup.rs`, `ui/`). Fiche : [vue-ensemble.md](vue-ensemble.md).
@@ -53,11 +53,12 @@ Nom par défaut (`config::default_name`) : `$USER` s'il est non vide, sinon `pla
 
 ## Boucle principale
 
-`app::run` crée la tâche réseau (`net::spawn`) et boucle jusqu'à `quit` sur un `tokio::select!` à trois branches :
+`app::run` crée la tâche réseau (`net::spawn`) et boucle jusqu'à `quit` sur un `tokio::select!` à quatre branches :
 
 | Branche | Source | Traitement |
 |---|---|---|
 | terminal | `crossterm::EventStream` | `App::on_terminal` : touche vers `Action` vers `ClientMsg` |
+| signal | SIGTERM (`docker stop`), SIGHUP (fenêtre fermée) ; Unix seulement | `quit = true` : sortie normale, `main` restaure le terminal. Pas couvert pendant l'assistant (lecture bloquante) |
 | réseau | canal `NetEvent` | `App::on_net` : statut, `GameState::apply` |
 | frame | `interval` de 33 ms (environ 30 images/s) | `terminal.draw(ui::draw)` |
 
