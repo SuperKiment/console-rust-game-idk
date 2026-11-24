@@ -61,7 +61,7 @@ En docker : volume `client-config` monté dans `/config` ; `/etc/localtime` est 
 ## Mode incognito
 
 Remplace l'interface par une fausse fenêtre d'éditeur de code (onglets, numéros de ligne, journal façon logs serveur, barre d'état), en niveaux de gris et en ASCII. La connexion et le jeu continuent normalement.
-- `F2` : bascule à chaud (hors saisie du chat).
+- `F2` : bascule à chaud (y compris en saisie de chat, le texte est conservé).
 - `--incognito` : démarre dans ce mode (session seulement).
 - Option `incognito` de la config (question de l'assistant) : mode de démarrage par défaut.
 
