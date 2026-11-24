@@ -21,12 +21,21 @@ pub const MAX_NAME: usize = 16;
 pub const MAX_CHAT: usize = 240;
 
 /// Caractère à ne jamais afficher dans un nom ou un chat : contrôle, ou format Unicode invisible
-/// ou qui inverse l'affichage (U+200B-200C, 200E-200F, 202A-202E, 2060-2064, 2066-2069, FEFF).
-/// U+200D (ZWJ) reste permis : il compose les emoji.
+/// ou qui inverse l'affichage, ou qui rend un nom vide en apparence (U+00AD, 061C, 115F-1160, 180E,
+/// 200B-200C, 200E-200F, 2028-2029, 202A-202E, 2060-2064, 2065, 2066-2069, 206A-206F, 2800, 3164,
+/// FEFF, FFF9-FFFB, E0000-E007F). U+200D (ZWJ) reste permis : il compose les emoji.
 pub fn is_hidden_char(c: char) -> bool {
     c.is_control()
-        || matches!(c, '\u{200B}'..='\u{200C}' | '\u{200E}'..='\u{200F}' | '\u{202A}'..='\u{202E}'
-            | '\u{2060}'..='\u{2064}' | '\u{2066}'..='\u{2069}' | '\u{FEFF}')
+        || matches!(c, '\u{00AD}' | '\u{061C}' | '\u{115F}'..='\u{1160}' | '\u{180E}'
+            | '\u{200B}'..='\u{200C}' | '\u{200E}'..='\u{200F}' | '\u{2028}'..='\u{2029}'
+            | '\u{202A}'..='\u{202E}' | '\u{2060}'..='\u{2064}' | '\u{2065}' | '\u{2066}'..='\u{2069}'
+            | '\u{206A}'..='\u{206F}' | '\u{2800}' | '\u{3164}' | '\u{FEFF}' | '\u{FFF9}'..='\u{FFFB}'
+            | '\u{E0000}'..='\u{E007F}')
+}
+
+/// Vrai s'il reste un caractère visible : ni blanc, ni ZWJ seul (U+200D n'affiche rien hors emoji).
+pub fn has_visible_char(s: &str) -> bool {
+    s.chars().any(|c| !c.is_whitespace() && c != '\u{200D}')
 }
 
 /// Nom d'affichage : sans caractères cachés (`is_hidden_char`), sans espaces aux bords, au plus `MAX_NAME`
@@ -36,7 +45,7 @@ pub fn clean_name(raw: &str) -> String {
     let name: String = filtered.trim().chars().take(MAX_NAME).collect();
     // Le `take` peut laisser un espace en fin de nom (ex. "abc def" coupé après l'espace).
     let name = name.trim_end();
-    if name.is_empty() { "player".to_string() } else { name.to_string() }
+    if has_visible_char(name) { name.to_string() } else { "player".to_string() }
 }
 
 /// Identifier of anything that moves (players and animals share the id space).
@@ -160,5 +169,37 @@ mod tests {
         assert_eq!(clean_name("\u{200B}"), "player");
         assert_eq!(clean_name("\u{202E}bob\u{FEFF}"), "bob");
         assert_eq!(clean_name("a\u{200D}b"), "a\u{200D}b");
+    }
+
+    #[test]
+    fn zwj_only_name_falls_back_to_default() {
+        assert_eq!(clean_name("\u{200D}"), "player");
+        assert_eq!(clean_name(" \u{200D} \u{200D}"), "player");
+        assert!(has_visible_char("a\u{200D}"));
+        assert!(!has_visible_char("\u{200D} "));
+    }
+
+    #[test]
+    fn invisible_ranges_are_hidden() {
+        let ranges = [
+            ('\u{2028}', '\u{2029}'),
+            ('\u{061C}', '\u{061C}'),
+            ('\u{2065}', '\u{2065}'),
+            ('\u{206A}', '\u{206F}'),
+            ('\u{00AD}', '\u{00AD}'),
+            ('\u{180E}', '\u{180E}'),
+            ('\u{FFF9}', '\u{FFFB}'),
+            ('\u{E0000}', '\u{E007F}'),
+            ('\u{3164}', '\u{3164}'),
+            ('\u{115F}', '\u{1160}'),
+            ('\u{2800}', '\u{2800}'),
+        ];
+        for (lo, hi) in ranges {
+            for c in lo..=hi {
+                assert!(is_hidden_char(c), "U+{:04X} doit être caché", c as u32);
+                assert_eq!(clean_name(&c.to_string()), "player");
+            }
+        }
+        assert!(!is_hidden_char('a') && !is_hidden_char('\u{200D}'));
     }
 }

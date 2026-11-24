@@ -9,7 +9,7 @@ use idk_shared::content::{Effect, Species, Tile, player_color_index};
 use idk_shared::geo::{CHUNK_SIZE, ChunkPos, Dir, Pos};
 use idk_shared::protocol::{
     ClientMsg, EntityId, EntityView, KEEP_CHUNKS, LogKind, LogLine, Look, MAX_CHAT, ServerMsg, VIEW_CHUNKS,
-    is_hidden_char,
+    has_visible_char, is_hidden_char,
 };
 use tokio::sync::mpsc::Sender;
 use tokio::sync::mpsc::error::TrySendError;
@@ -446,7 +446,7 @@ impl Game {
     /// prise par un animal errant, on prend la tuile libre la plus proche (rayon `SPAWN_SLIDE`),
     /// sinon l'animal est perdu.
     fn place_spawned_animal(&mut self, species: Species, pos: Pos, now: Instant) {
-        if self.insert_animal(species, pos, None, now).is_some() {
+        if crate::ai::free(self, pos) && self.insert_animal(species, pos, None, now).is_some() {
             return;
         }
         for r in 1..=SPAWN_SLIDE {
@@ -492,7 +492,7 @@ fn clean_chat(raw: &str) -> Option<String> {
     let filtered: String = raw.chars().filter(|&c| !is_hidden_char(c)).collect();
     let text: String = filtered.trim().chars().take(MAX_CHAT).collect();
     let text = text.trim_end();
-    if text.is_empty() { None } else { Some(text.to_string()) }
+    if has_visible_char(text) { Some(text.to_string()) } else { None }
 }
 
 #[cfg(test)]
@@ -595,6 +595,19 @@ mod tests {
         assert_eq!(clean_chat("a\u{202E}b").as_deref(), Some("ab"));
         assert_eq!(clean_chat("\u{200B}\u{FEFF}"), None);
         assert_eq!(clean_chat("a\u{200D}b").as_deref(), Some("a\u{200D}b"));
+        assert_eq!(clean_chat("\u{200D}"), None);
+        assert_eq!(clean_chat(" \u{200D} "), None);
+    }
+
+    #[test]
+    fn spawned_animal_does_not_land_on_player() {
+        let now = Instant::now();
+        let mut g = Game::new(World::new(5));
+        join(&mut g, 1, "alice", now);
+        let pos = g.players[&1].pos;
+        g.place_spawned_animal(Species::Dog, pos, now);
+        assert_eq!(g.animal_at(pos), None);
+        g.assert_animal_index();
     }
 
     #[test]
