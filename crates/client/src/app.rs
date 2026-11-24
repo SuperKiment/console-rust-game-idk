@@ -82,14 +82,33 @@ pub async fn run(terminal: &mut DefaultTerminal, config: Config) -> std::io::Res
     };
     let mut input = EventStream::new();
     let mut frame = tokio::time::interval(FRAME);
+    let mut terminate = std::pin::pin!(terminate_signal());
     while !app.quit {
         tokio::select! {
             Some(Ok(ev)) = input.next() => app.on_terminal(ev),
+            // Sortie normale : `main` restaure le terminal (écran alternatif, raw mode).
+            _ = &mut terminate => app.quit = true,
             Some(ev) = net_events.recv() => app.on_net(ev),
             _ = frame.tick() => { terminal.draw(|f| crate::ui::draw(f, &app))?; }
         }
     }
     Ok(())
+}
+
+/// SIGTERM (`docker stop`) ou SIGHUP (fenêtre de terminal fermée). Ne se résout jamais hors Unix
+/// ou si l'installation du gestionnaire échoue.
+async fn terminate_signal() {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{SignalKind, signal};
+        if let (Ok(mut term), Ok(mut hup)) = (signal(SignalKind::terminate()), signal(SignalKind::hangup())) {
+            tokio::select! {
+                _ = term.recv() => return,
+                _ = hup.recv() => return,
+            }
+        }
+    }
+    std::future::pending::<()>().await
 }
 
 impl App {
