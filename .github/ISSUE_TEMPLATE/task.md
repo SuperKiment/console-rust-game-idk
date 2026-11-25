@@ -1,6 +1,7 @@
 ---
 name: Tâche
 about: Une tâche = une branche = une PR
+labels: status:needs-design
 ---
 
 ## But
