@@ -8,7 +8,7 @@ use idk_shared::protocol::{EntityId, LogKind};
 
 use crate::game::{ConnId, Game, VIEW_TILES};
 
-/// Animals farther than this from every player are frozen. Equal to the streaming radius (96 tiles),
+/// Animals farther than this from every player are frozen (except tamed ones whose owner is online). Equal to the streaming radius (96 tiles),
 /// already about 2 times the width and 6 times the height a 120x40 terminal shows (±43 to ±58 tiles
 /// wide, ±14 to ±15 high depending on the layout): simulating farther would only animate animals in
 /// chunks no client holds.
@@ -26,7 +26,12 @@ pub fn step(game: &mut Game, now: Instant) {
     let due: Vec<EntityId> = game
         .animals()
         .values()
-        .filter(|a| now >= a.next_step && players.iter().any(|(_, p)| p.dist(a.pos()) <= ACTIVE_RADIUS))
+        .filter(|a| {
+            // Un animal dont le maître est en ligne reste actif à toute distance : `act` le téléporte.
+            let owner_online = a.tamed_by.as_ref().is_some_and(|n| players.iter().any(|(p, _)| p == n));
+            now >= a.next_step
+                && (owner_online || players.iter().any(|(_, p)| p.dist(a.pos()) <= ACTIVE_RADIUS))
+        })
         .map(|a| a.id)
         .collect();
     for id in due {
@@ -200,6 +205,18 @@ mod tests {
         assert!(g.animals()[&dog].pos().dist(player) <= 1);
         g.assert_animal_index();
         run(&mut g, now, 20);
+        g.assert_animal_index();
+    }
+
+    #[test]
+    fn tamed_animal_follows_owner_beyond_active_radius() {
+        let (mut g, dog, _rx, now) = setup(Species::Dog, (1, 0));
+        g.animal_mut(dog).tamed_by = Some("alice".into());
+        let player = g.players[&1].pos;
+        g.move_animal(dog, Pos::new(player.x + 200, player.y));
+        g.animal_mut(dog).next_step = now;
+        step(&mut g, now);
+        assert!(g.animals()[&dog].pos().dist(player) <= 1);
         g.assert_animal_index();
     }
 

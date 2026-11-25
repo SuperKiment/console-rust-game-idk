@@ -4,14 +4,14 @@
 | 19-32 | Modules |
 | 33-55 | Boucle de jeu |
 | 56-67 | — Tick (20 Hz) |
-| 68-75 | — Actions des joueurs |
-| 76-84 | — Animaux et index de tuiles |
-| 85-99 | — Sessions et déconnexions |
-| 100-126 | Monde par chunks |
-| 127-133 | — Streaming de chunks |
-| 134-150 | IA des animaux (paramétrique) |
-| 151-178 | Sauvegarde |
-| 179-183 | Docs liées |
+| 68-77 | — Actions des joueurs |
+| 78-86 | — Animaux et index de tuiles |
+| 87-101 | — Sessions et déconnexions |
+| 102-128 | Monde par chunks |
+| 129-135 | — Streaming de chunks |
+| 136-152 | IA des animaux (paramétrique) |
+| 153-180 | Sauvegarde |
+| 181-185 | Docs liées |
 # Serveur : architecture
 
 > Vérifié le 2026-11-25 depuis `crates/server/src/` (`lib.rs`, `main.rs`, `net.rs`, `game.rs`, `ai.rs`, `save.rs`, `rng.rs`, `world/`). Fiche : [vue-ensemble.md](vue-ensemble.md).
@@ -68,6 +68,8 @@ Un `Move` reçu hors cooldown (`MOVE_COOLDOWN` = 90 ms) s'exécute tout de suite
 ### Actions des joueurs
 
 Dans `Game::handle` : `Interact`, `Build`, `Break` visent la tuile adjacente dans la direction donnée. `Build` pose `Tile::BUILT` (`Wall`) sur une tuile praticable, libre de joueur et d'animal. `Break` utilise `breaks_into` de la définition de la tuile. `set_tile` notifie par `TileChanged` les joueurs qui détiennent le chunk, plus un effet `Dust`.
+
+Avant `Interact`, `Build` ou `Break`, un `pending_move` éventuel est appliqué immédiatement (`try_move`, cooldown ignoré pour ce move, `next_move` remis à jour) : l'action part de la position que le client croit avoir, l'ordre d'envoi est respecté. `Interact` cherche d'abord un joueur sur la tuile visée (salut), puis un animal (caresse) : un animal peut partager la tuile d'un joueur.
 
 `Chat` : caractères cachés supprimés (`is_hidden_char`, ZWJ conservé), `trim`, 240 caractères max (`MAX_CHAT`), message ignoré s'il n'a aucun caractère visible (`has_visible_char` : vide, blancs ou ZWJ seuls) ; diffusé à tous en `Log(Chat)`.
 
@@ -129,7 +131,7 @@ flowchart TD
 `Game::stream_chunks(conn)` : pour chaque chunk dans le rayon `VIEW_CHUNKS` (3, `crates/shared/src/protocol.rs`) autour du joueur non présent dans `Player.sent`, appelle `world.load`, crée les animaux fraîchement apparus (`place_spawned_animal` : la tuile prévue si elle est libre (`ai::free` : praticable, sans animal ni joueur, donc un animal neuf n'apparaît jamais sous un joueur), sinon la première tuile libre dans un rayon de 2 (`SPAWN_SLIDE`), sinon l'animal est perdu), envoie `ServerMsg::Chunk` et l'ajoute à `sent`. Les chunks à plus de `KEEP_CHUNKS` (= `VIEW_CHUNKS + 1`, partagé avec le client) sont retirés de `sent` ; le client les oublie à la même distance, ils seront renvoyés au retour.
 
 > [!NOTE]
-> Les animaux ne disparaissent jamais d'eux-mêmes. Ils sont simplement gelés quand aucun joueur n'est à moins de `ACTIVE_RADIUS` (= `VIEW_TILES`, soit environ 2 fois la largeur et 6 fois la hauteur affichées par un terminal 120×40) tuiles.
+> Les animaux ne disparaissent jamais d'eux-mêmes. Ils sont simplement gelés quand aucun joueur n'est à moins de `ACTIVE_RADIUS`, sauf un animal apprivoisé dont le maître est en ligne (toujours actif, il est téléporté près de lui) (= `VIEW_TILES`, soit environ 2 fois la largeur et 6 fois la hauteur affichées par un terminal 120×40) tuiles.
 
 ## IA des animaux (paramétrique)
 
@@ -144,7 +146,7 @@ flowchart TD
 | `tameable` | une caresse le fait suivre le joueur ; une seconde le libère |
 | `sound_chance` | probabilité par pas d'émettre un son |
 
-`ai::step` calcule la liste des joueurs une fois par tick, puis filtre les animaux : `next_step` échu d'abord, la recherche d'un joueur à moins de `ACTIVE_RADIUS` n'a lieu que pour les animaux dus (court-circuit du `&&`).
+`ai::step` calcule la liste des joueurs une fois par tick, puis filtre les animaux : `next_step` échu d'abord, puis actif si le maître est en ligne (quelle que soit la distance, sinon la téléportation de `act` ne serait jamais atteinte) ou si un joueur est à moins de `ACTIVE_RADIUS`. Le déchargement de chunks est côté client uniquement : les animaux vivent dans `Game.animals`, rien à décharger côté serveur.
 
 Priorité de décision dans `act` : animal apprivoisé trop loin (plus de `TELEPORT_DIST` = 40) se téléporte à côté de son maître ; apprivoisé au-delà de `FOLLOW_DIST` suit son maître (délai entre pas divisé par deux, plafonné à 200 ms) ; apprivoisé proche flâne (idle 0,85) ; apprivoisé dont le maître est hors ligne flâne aussi (idle 0,85), sans fuite ni curiosité envers les autres joueurs, et reste à lui (`tamed_by`) ; sinon fuite, curiosité, puis errance. Un pas bloqué tente un déplacement latéral, jamais le demi-tour. Les sons passent dans le journal des joueurs à moins de `HEAR_RADIUS` (10) tuiles, avec un effet `Sound`.
 
