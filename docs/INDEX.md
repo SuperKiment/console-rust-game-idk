@@ -30,3 +30,4 @@ Les plages ne sont volontairement pas recopiées ici : elles se périmaient. L'i
 - [server/carto-architecture.md](project-specific-docs/console-rust-game-idk/server/carto-architecture.md) — serveur : boucle de jeu et tick, monde par chunks, IA, sauvegarde.
 - [client/carto-architecture.md](project-specific-docs/console-rust-game-idk/client/carto-architecture.md) — client : boucle `select`, reconnexion, layouts normal et incognito, assistant de config, touches, glyphes.
 - [guide-ajout-contenu.md](project-specific-docs/console-rust-game-idk/guide-ajout-contenu.md) — ajouter tuiles, biomes, animaux, effets via les tables de contenu.
+- [guide-workflow-ia.md](project-specific-docs/console-rust-game-idk/guide-workflow-ia.md) — labels et protocole entre les tâches planifiées designer (2h) et développeur (5h) : états, ordre de passage, forme des commentaires.

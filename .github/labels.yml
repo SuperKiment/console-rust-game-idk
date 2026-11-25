@@ -1,0 +1,36 @@
+# Source de vérité des labels. Synchronisés par .github/workflows/labels.yml
+# (création ou mise à jour, jamais de suppression). Protocole : docs/project-specific-docs/console-rust-game-idk/guide-workflow-ia.md
+
+# --- Type (un seul, plus epic en complément ; bug, documentation et enhancement existent déjà par défaut) ---
+- {name: bug, color: d73a4a, description: "Défaut constaté (branche fix/)"}
+- {name: enhancement, color: a2eeef, description: "Nouvelle fonctionnalité (branche feat/)"}
+- {name: documentation, color: 0075ca, description: "Documentation seule (branche docs/)"}
+- {name: chore, color: cfd3d7, description: "Outillage, CI, dépendances (branche chore/)"}
+- {name: refactor, color: cfd3d7, description: "Réorganisation sans changement de comportement (branche refactor/)"}
+- {name: test, color: cfd3d7, description: "Tests seuls (branche test/)"}
+- {name: epic, color: 3e4b9e, description: "Regroupe des sous-issues ; jamais développée directement"}
+
+# --- État (un seul par issue ouverte ; c'est le canal de communication entre les deux agents) ---
+- {name: "status:needs-design", color: 1d76db, description: "-> designer : à spécifier, ou bug à reproduire"}
+- {name: "status:ready", color: 0e8a16, description: "designer -> dev : spécification complète, prête à développer"}
+- {name: "status:in-progress", color: fbca04, description: "dev : travail commencé (branche/PR ouverte), à reprendre en premier"}
+- {name: "status:needs-info", color: d93f0b, description: "dev -> designer : question bloquante, détail dans le dernier commentaire [dev]"}
+- {name: "status:needs-split", color: d93f0b, description: "dev -> designer : trop grosse, découpage proposé en commentaire [dev]"}
+- {name: "status:to-verify", color: c5def5, description: "dev -> designer : mergée, à vérifier en jeu (posé sur l'issue fermée)"}
+- {name: "needs-human", color: b60205, description: "Les deux agents ignorent l'issue : décision humaine requise"}
+
+# --- Priorité (posée par le designer ; absent = normal) ---
+- {name: "prio:high", color: e11d21, description: "À traiter avant le reste"}
+- {name: "prio:normal", color: fef2c0, description: "Priorité par défaut"}
+- {name: "prio:low", color: c2e0c6, description: "Quand il n'y a rien d'autre"}
+
+# --- Taille (posée par le designer ; size:l interdit en status:ready, à scinder d'abord) ---
+- {name: "size:s", color: d4c5f9, description: "Un fichier ou un module, moins d'une heure"}
+- {name: "size:m", color: b69ef0, description: "Plusieurs fichiers d'une crate, une session de dev"}
+- {name: "size:l", color: 5319e7, description: "Plusieurs crates ou plus d'une session : à scinder"}
+
+# --- Zone (plusieurs possibles) ---
+- {name: "area:shared", color: 006b75, description: "crates/shared : protocole, contenu"}
+- {name: "area:server", color: 006b75, description: "crates/server : monde, IA, sauvegarde"}
+- {name: "area:client", color: 006b75, description: "crates/client : TUI, saisie, rendu"}
+- {name: "area:infra", color: 006b75, description: "Docker, CI, GitHub"}
