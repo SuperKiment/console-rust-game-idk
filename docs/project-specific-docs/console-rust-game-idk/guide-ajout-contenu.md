@@ -24,3 +24,7 @@ Tout le contenu est déclaré dans des tables de `crates/shared/src/content/`, v
 Nouvel animal : une ligne dans `SPECIES` (comportement composé avec les champs de `Ai` : `flee_radius`, `curious_radius`, `tameable`…), puis l'ajouter aux `spawns` d'un ou plusieurs biomes.
 
 Nouveau biome : une ligne dans `BIOMES`. Les biomes terrestres partagent la bande `LAND` ; dans une même bande, le biome au climat le plus proche gagne (`Biome::select`). Les bandes d'altitude doivent couvrir tout l'intervalle (test `elevation_bands_cover_range`).
+
+## Tests de non-régression
+
+Si tu changes le générateur, le bruit ou le RNG, le test golden (`golden_generation`, `crates/server/src/world/generator.rs`) casse : le mettre à jour seulement si le changement des mondes est voulu. Les tables sont aussi vérifiées par `species_rows_are_playable` et `effects_last_and_tiles_break_into_walkable` (`content/mod.rs`).

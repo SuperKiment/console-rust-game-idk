@@ -192,4 +192,85 @@ mod tests {
         assert!(s.is_offline());
         assert_eq!(s.map_center(), Some(pos));
     }
+
+    use idk_shared::geo::CHUNK_AREA;
+    use idk_shared::protocol::Look;
+
+    fn chunk(x: i32, y: i32) -> ChunkData {
+        ChunkData {
+            pos: ChunkPos::new(x, y),
+            tiles: vec![Tile::Grass; CHUNK_AREA],
+            biomes: vec![Biome::Plains; CHUNK_AREA],
+        }
+    }
+
+    /// État avec un joueur (id 1) placé en `pos`.
+    fn state_at(pos: Pos, now: Instant) -> GameState {
+        let mut s = GameState::default();
+        s.apply(ServerMsg::Welcome { id: 1, name: "a".into(), seed: 0 }, now);
+        let look = Look::Player { name: "a".into(), color: 0 };
+        s.apply(ServerMsg::Entities(vec![EntityView { id: 1, pos, facing: Dir::North, look }]), now);
+        s
+    }
+
+    #[test]
+    fn invalid_chunk_is_rejected() {
+        let now = Instant::now();
+        let mut s = GameState::default();
+        let mut bad = chunk(0, 0);
+        bad.tiles.pop();
+        s.apply(ServerMsg::Chunk(bad), now);
+        assert_eq!(s.tile(Pos::new(0, 0)), None);
+        s.apply(ServerMsg::Chunk(chunk(0, 0)), now);
+        assert_eq!(s.tile(Pos::new(0, 0)), Some(Tile::Grass));
+    }
+
+    #[test]
+    fn far_chunks_are_evicted() {
+        let now = Instant::now();
+        let mut s = state_at(Pos::new(0, 0), now);
+        s.apply(ServerMsg::Chunk(chunk(KEEP_CHUNKS, 0)), now);
+        s.apply(ServerMsg::Chunk(chunk(KEEP_CHUNKS + 1, 0)), now);
+        let tile_x = |c: i32| Pos::new(c * idk_shared::geo::CHUNK_SIZE, 0);
+        assert!(s.tile(tile_x(KEEP_CHUNKS)).is_some(), "à KEEP_CHUNKS : gardé");
+        assert!(s.tile(tile_x(KEEP_CHUNKS + 1)).is_none(), "au-delà de KEEP_CHUNKS : évincé");
+    }
+
+    #[test]
+    fn tile_changed_updates_loaded_chunk_and_ignores_unloaded() {
+        let now = Instant::now();
+        let mut s = GameState::default();
+        s.apply(ServerMsg::Chunk(chunk(0, 0)), now);
+        s.apply(ServerMsg::TileChanged { pos: Pos::new(1, 1), tile: Tile::Wall }, now);
+        assert_eq!(s.tile(Pos::new(1, 1)), Some(Tile::Wall));
+        s.apply(ServerMsg::TileChanged { pos: Pos::new(500, 500), tile: Tile::Wall }, now);
+        assert_eq!(s.tile(Pos::new(500, 500)), None, "chunk non chargé : pas créé");
+    }
+
+    #[test]
+    fn effect_expires_after_its_duration() {
+        let now = Instant::now();
+        let mut s = GameState::default();
+        let pos = Pos::new(2, 2);
+        s.apply(ServerMsg::Effect { pos, effect: Effect::Heart }, now);
+        let dur = Duration::from_millis(Effect::Heart.def().duration_ms as u64);
+        assert_eq!(s.effect_at(pos, now), Some(Effect::Heart));
+        assert_eq!(s.effect_at(pos, now + dur - Duration::from_millis(1)), Some(Effect::Heart));
+        assert_eq!(s.effect_at(pos, now + dur), None);
+        // Le prochain message purge l'effet expiré.
+        s.apply(ServerMsg::Online(vec![]), now + dur);
+        assert!(s.effects.is_empty());
+    }
+
+    #[test]
+    fn log_is_capped_and_drops_oldest() {
+        let now = Instant::now();
+        let mut s = GameState::default();
+        for i in 0..LOG_SIZE + 5 {
+            s.apply(ServerMsg::Log(LogLine::new(LogKind::Chat { from: "x".into() }, format!("{i}"))), now);
+        }
+        assert_eq!(s.log.len(), LOG_SIZE);
+        assert_eq!(s.log.front().unwrap().line.text, "5");
+        assert_eq!(s.log.back().unwrap().line.text, (LOG_SIZE + 4).to_string());
+    }
 }

@@ -44,3 +44,43 @@ impl Rng {
         (!items.is_empty()).then(|| &items[self.below(items.len())])
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rng_is_deterministic_and_seed_dependent() {
+        let draw = |seed| {
+            let mut r = Rng::new(seed);
+            [r.next_u64(), r.next_u64(), r.next_u64()]
+        };
+        assert_eq!(draw(7), draw(7));
+        assert_ne!(draw(7), draw(8));
+        // Golden : la suite du RNG fait partie du format des mondes générés.
+        assert_eq!(
+            draw(0)[0],
+            mix(0x9E37_79B9_7F4A_7C15),
+            "le RNG a changé : les mondes existants changeront"
+        );
+    }
+
+    #[test]
+    fn unit_and_below_stay_in_bounds() {
+        let mut r = Rng::new(1);
+        for _ in 0..1000 {
+            let h = r.next_u64();
+            assert!((0.0..1.0).contains(&unit(h)));
+            assert!(r.below(7) < 7);
+        }
+        assert!(r.pick::<u8>(&[]).is_none());
+        assert!(!Rng::new(1).chance(0.0));
+    }
+
+    #[test]
+    fn hash2_is_stable_and_handles_negatives() {
+        assert_eq!(hash2(5, -3, 9), hash2(5, -3, 9));
+        assert_ne!(hash2(5, -3, 9), hash2(5, 3, 9));
+        assert_ne!(hash2(5, 1, 2), hash2(5, 2, 1));
+    }
+}

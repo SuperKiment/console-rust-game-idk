@@ -36,3 +36,20 @@ pub fn fbm(seed: u64, x: i32, y: i32, scale: f32, octaves: u32) -> f32 {
     }
     sum / norm
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn noise_is_deterministic_and_bounded() {
+        for (x, y) in [(0, 0), (-50, 70), (1234, -999), (-1, -1)] {
+            let a = fbm(9, x, y, 160.0, 5);
+            assert_eq!(a, fbm(9, x, y, 160.0, 5));
+            assert!((-1.0..=1.0).contains(&a), "{a} hors bornes en ({x}, {y})");
+            let v = value(9, x as f32 * 0.37, y as f32 * 0.37);
+            assert!((-1.0..=1.0).contains(&v), "{v}");
+        }
+        assert_ne!(fbm(9, 10, 10, 160.0, 5), fbm(10, 10, 10, 160.0, 5));
+    }
+}
