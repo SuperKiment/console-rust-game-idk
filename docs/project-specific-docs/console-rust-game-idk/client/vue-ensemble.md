@@ -22,7 +22,7 @@ Un client par joueur. Image docker cible `client` (volume `/config` via `XDG_CON
 
 ## Tests
 
-Tests unitaires : `src/app.rs`, `src/input.rs`, `src/config.rs`, `src/setup.rs` (machine d'états de l'assistant), `src/state.rs`, `src/ui/game.rs`, `src/ui/glyphs.rs`, `src/ui/incognito.rs`. Pas de test d'intégration (`crates/client/tests` absent). L'interface se teste à la main dans `tmux` (voir `docs/CLAUDE.md`).
+Tests unitaires : `src/app.rs`, `src/input.rs`, `src/config.rs`, `src/setup.rs` (machine d'états de l'assistant), `src/state.rs` (un test par cas de `GameState::apply` : chunk invalide, éviction `KEEP_CHUNKS`, `TileChanged`, expiration des effets, plafond du journal), `src/ui/game.rs`, `src/ui/glyphs.rs`, `src/ui/incognito.rs`. Pas de test d'intégration (`crates/client/tests` absent). L'interface se teste à la main dans `tmux` (voir `docs/CLAUDE.md`).
 
 ## Docs liées
 

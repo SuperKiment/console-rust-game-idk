@@ -22,7 +22,7 @@ Un seul serveur, un monde. Image docker cible `server` (volume `/data`, port 777
 
 ## Tests
 
-- Unitaires : `src/ai.rs`, `src/game.rs`, `src/save.rs`, `src/world/mod.rs`, `src/world/generator.rs`.
+- Unitaires : `src/ai.rs`, `src/game.rs`, `src/save.rs`, `src/world/mod.rs`, `src/world/generator.rs` (dont `golden_generation` : empreinte FNV-1a des tuiles et biomes + apparitions de 3 chunks pour une seed fixe), `src/rng.rs`, `src/world/noise.rs`. Si tu changes le générateur, le bruit ou le RNG, le test golden casse : le mettre à jour seulement si le changement des mondes est voulu.
 - Intégration : `tests/network.rs` (vrai serveur sur port aléatoire, client brut : connexion, construction, chat, persistance au redémarrage, reprise du même nom, handshake invalide).
 - Exemple : `cargo run -p idk-server --example worldmap -- <seed> [step]` affiche une vue d'ensemble des biomes.
 

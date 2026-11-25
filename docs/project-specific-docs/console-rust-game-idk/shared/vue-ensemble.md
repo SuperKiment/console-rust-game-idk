@@ -24,7 +24,7 @@ Source de vérité du contenu (une ligne de table = variante + définition) et d
 
 ## Tests
 
-Tests unitaires dans `src/net.rs` (aller-retour TCP), `src/content/mod.rs` (glyphes larges, biomes valides), `src/content/biomes.rs` (`elevation_bands_cover_range`, `climate_picks_nearest`), `src/geo.rs` (géométrie), `src/protocol.rs` (`clean_name`, `is_hidden_char`, `strip_hidden`, `has_visible_char`, emoji `❤️` et ZWJ conservés). `cargo test -p idk-shared`.
+Tests unitaires dans `src/net.rs` (aller-retour TCP), `src/content/mod.rs` (glyphes larges, biomes valides, invariants des espèces : `step_ms` > 0, phrases de caresse non vides, sons ; durée des effets ; tuiles cassées praticables), `src/content/biomes.rs` (`elevation_bands_cover_range`, `climate_picks_nearest`), `src/geo.rs` (géométrie), `src/protocol.rs` (`clean_name`, `is_hidden_char`, `strip_hidden`, `has_visible_char`, emoji `❤️` et ZWJ conservés). `cargo test -p idk-shared`.
 
 ## Docs liées
 

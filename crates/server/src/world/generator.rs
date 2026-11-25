@@ -134,4 +134,33 @@ mod tests {
         let missing: Vec<_> = Biome::ALL.iter().filter(|b| !seen.contains(b)).map(|b| b.def().name).collect();
         assert!(missing.is_empty(), "unreachable biomes: {missing:?}");
     }
+
+    /// FNV-1a 64 bits maison : sortie garantie stable (contrairement à `DefaultHasher`).
+    fn fnv1a(bytes: impl IntoIterator<Item = u8>) -> u64 {
+        bytes
+            .into_iter()
+            .fold(0xCBF2_9CE4_8422_2325, |h, b| (h ^ b as u64).wrapping_mul(0x0000_0100_0000_01B3))
+    }
+
+    /// Golden : seed fixe, chunks dont négatifs. Si ce test casse, le générateur, le bruit ou le RNG
+    /// a changé.
+    #[test]
+    fn golden_generation() {
+        const MSG: &str = "le générateur a changé : les mondes existants changeront ; mettre à jour le golden seulement si voulu";
+        let g = Generator::new(1234);
+        let mut got = Vec::new();
+        for (x, y) in [(0, 0), (-3, 5), (-7, -2)] {
+            let out = g.generate(ChunkPos::new(x, y));
+            let tiles = fnv1a(out.tiles.iter().flat_map(|t| (*t as u16).to_le_bytes()));
+            let biomes = fnv1a(out.biomes.iter().flat_map(|b| (*b as u16).to_le_bytes()));
+            let spawns: Vec<_> = out.spawns.iter().map(|(s, p)| (s.def().name, p.x, p.y)).collect();
+            got.push((tiles, biomes, spawns));
+        }
+        let expected = vec![
+            (8302391169136521743, 9390684443042579344, vec![]),
+            (1654780943820312741, 14064201926726868322, vec![]),
+            (8284197483993071207, 17805690994692547365, vec![("sheep", -203, -38), ("cow", -215, -55)]),
+        ];
+        assert_eq!(got, expected, "{MSG}");
+    }
 }

@@ -108,4 +108,29 @@ mod tests {
             assert!(b.elevation.0 < b.elevation.1, "{}", b.name);
         }
     }
+
+    #[test]
+    fn species_rows_are_playable() {
+        for s in SPECIES {
+            assert!(s.ai.step_ms > 0, "{}: step_ms doit être > 0", s.name);
+            assert!((0.0..=1.0).contains(&s.ai.idle), "{}: idle", s.name);
+            assert!((0.0..=1.0).contains(&s.ai.sound_chance), "{}: sound_chance", s.name);
+            assert!(!s.pet.is_empty(), "{}: au moins une phrase de caresse", s.name);
+            assert!(s.pet.iter().all(|l| !l.is_empty()), "{}: phrase de caresse vide", s.name);
+            assert!(s.ai.sound_chance == 0.0 || !s.sounds.is_empty(), "{}: sound_chance sans sons", s.name);
+        }
+    }
+
+    #[test]
+    fn effects_last_and_tiles_break_into_walkable() {
+        for e in EFFECTS {
+            assert!(e.duration_ms > 0, "{:?}", e.glyph);
+        }
+        for t in TILES {
+            assert!(!t.name.is_empty(), "tuile sans nom : {:?}", t.glyph);
+            if let Some(into) = t.breaks_into {
+                assert!(into.def().walkable, "{} se casse en une tuile non praticable", t.name);
+            }
+        }
+    }
 }
