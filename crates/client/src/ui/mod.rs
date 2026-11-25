@@ -11,6 +11,7 @@ use ratatui::Frame;
 use ratatui::symbols::border;
 use ratatui::text::Line;
 use ratatui::widgets::{Block, BorderType};
+use unicode_segmentation::UnicodeSegmentation;
 
 use crate::app::App;
 use crate::config::GlyphSet;
@@ -57,13 +58,28 @@ pub fn clock(secs: u64) -> String {
 /// Fin de `text` tenant dans `budget` colonnes d'affichage (fenêtre glissante).
 fn tail_fit(text: &str, budget: usize) -> String {
     let mut used = 0;
-    let mut tail: Vec<char> = Vec::new();
-    for c in text.chars().rev() {
-        used += Line::from(c.to_string()).width();
+    let mut start = text.len();
+    // Par graphème : `❤️` (2 colonnes) se mesure d'un bloc, pas en `❤` (1) + U+FE0F (0).
+    for (i, g) in text.grapheme_indices(true).rev() {
+        used += Line::from(g).width();
         if used > budget {
             break;
         }
-        tail.push(c);
+        start = i;
     }
-    tail.iter().rev().collect()
+    text[start..].to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tail_fit_counts_graphemes_not_chars() {
+        let text = "❤️".repeat(70);
+        let tail = tail_fit(&text, 20);
+        assert!(Line::from(tail.as_str()).width() <= 20);
+        assert_eq!(tail, "❤️".repeat(10));
+        assert_eq!(tail_fit("abc", 10), "abc");
+    }
 }

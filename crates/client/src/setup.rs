@@ -101,7 +101,7 @@ impl Wizard {
         self.error = None;
         match (key.code, self.input()) {
             (KeyCode::Backspace, Some((text, _))) if !text.is_empty() => {
-                text.pop();
+                crate::input::pop_grapheme(text);
             }
             (KeyCode::Backspace, _) => self.back(),
             (KeyCode::Char(c), Some((text, max))) => {

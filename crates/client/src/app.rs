@@ -208,7 +208,7 @@ impl App {
                 }
                 KeyCode::Esc => self.mode = Mode::Play,
                 KeyCode::Backspace => {
-                    text.pop();
+                    crate::input::pop_grapheme(text);
                 }
                 KeyCode::Char(c)
                     if !idk_shared::protocol::is_hidden_after(c, text.chars().next_back())

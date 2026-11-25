@@ -8,7 +8,7 @@ Client terminal : se connecte au serveur, affiche la carte, le journal et les pa
 
 ## Techno
 
-Binaire (`src/main.rs`, `clap`). `ratatui` 0.30, `crossterm` (feature `event-stream`), `tokio`, `toml` + `serde` pour la config, `chrono` (fuseau local, heure du journal et de l'horloge incognito). Options : `--server`, `--name`, `--incognito`, `--configure` (env `IDK_SERVER`, `IDK_NAME`).
+Binaire (`src/main.rs`, `clap`). `ratatui` 0.30, `crossterm` (feature `event-stream`), `tokio`, `toml` + `serde` pour la config, `unicode-segmentation` (découpage en graphèmes de la saisie), `chrono` (fuseau local, heure du journal et de l'horloge incognito). Options : `--server`, `--name`, `--incognito`, `--configure` (env `IDK_SERVER`, `IDK_NAME`).
 
 ## Dépendances
 

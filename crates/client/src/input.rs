@@ -2,6 +2,7 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use idk_shared::geo::Dir;
+use unicode_segmentation::UnicodeSegmentation;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
@@ -74,6 +75,13 @@ pub fn push_pasted(text: &mut String, pasted: &str, max: usize) {
     }
 }
 
+/// Retire le dernier graphème de `text` (emoji ZWJ, drapeau, teint, `❤️` : un seul appui Backspace).
+pub fn pop_grapheme(text: &mut String) {
+    if let Some((i, _)) = text.grapheme_indices(true).next_back() {
+        text.truncate(i);
+    }
+}
+
 pub fn action_for(key: KeyEvent) -> Option<Action> {
     if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == Char('c') {
         return Some(Action::Quit);
@@ -125,6 +133,16 @@ mod tests {
         assert_eq!(action_for(KeyEvent::new(Char('x'), KeyModifiers::ALT)), None);
         assert_eq!(action_for(KeyEvent::new(Char('b'), KeyModifiers::SUPER)), None);
         assert_eq!(action_for(KeyEvent::new(Char('j'), KeyModifiers::CONTROL)), None);
+    }
+
+    #[test]
+    fn pop_grapheme_removes_whole_cluster() {
+        for (input, expected) in [("a👍🏽", "a"), ("x🇫🇷", "x"), ("👨‍👩‍👧", ""), ("❤️", ""), ("", ""), ("ab", "a")]
+        {
+            let mut t = String::from(input);
+            pop_grapheme(&mut t);
+            assert_eq!(t, expected, "{input:?}");
+        }
     }
 
     #[test]
