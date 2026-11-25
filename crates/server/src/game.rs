@@ -221,6 +221,13 @@ impl Game {
     // --- actions ---
 
     fn handle(&mut self, conn: ConnId, msg: ClientMsg, now: Instant) {
+        // Une action lit la position du joueur : un déplacement en attente (cooldown) reçu avant
+        // elle est appliqué d'abord, pour respecter l'ordre d'envoi du client.
+        if matches!(msg, ClientMsg::Interact(_) | ClientMsg::Build(_) | ClientMsg::Break(_))
+            && let Some(dir) = self.players.get(&conn).and_then(|p| p.pending_move)
+        {
+            self.try_move(conn, dir, now);
+        }
         let Some(p) = self.players.get_mut(&conn) else { return };
         match msg {
             // Ping : sert seulement à réarmer le délai de lecture côté réseau.
@@ -272,15 +279,16 @@ impl Game {
     }
 
     fn interact(&mut self, conn: ConnId, target: Pos) {
-        if let Some(id) = self.animal_at(target) {
-            crate::ai::pet(self, conn, id);
-        } else if let Some(other) = self.players.values().find(|p| p.pos == target).map(|p| p.name.clone()) {
+        // Joueur d'abord : un animal peut partager la tuile d'un joueur (les joueurs le traversent).
+        if let Some(other) = self.players.values().find(|p| p.pos == target).map(|p| p.name.clone()) {
             let me = self.players[&conn].name.clone();
             self.tell(conn, LogKind::Info, format!("You wave at {other}."));
             if let Some(c) = self.conn_of(&other) {
                 self.tell(c, LogKind::Info, format!("{me} waves at you."));
             }
             self.effect(target, Effect::Heart);
+        } else if let Some(id) = self.animal_at(target) {
+            crate::ai::pet(self, conn, id);
         } else {
             let tile = self.world.tile(target).def().name;
             let mut text = format!("{tile} ahead.");
@@ -513,6 +521,52 @@ mod tests {
 
     fn drain(rx: &mut Receiver<ServerMsg>) -> Vec<ServerMsg> {
         std::iter::from_fn(|| rx.try_recv().ok()).collect()
+    }
+
+    /// Place alice sur une prairie dégagée ; renvoie sa position de départ.
+    fn grass_field(g: &mut Game) -> Pos {
+        let o = g.players[&1].pos;
+        for y in -5..=5 {
+            for x in -5..=8 {
+                g.world.set_tile(Pos::new(o.x + x, o.y + y), Tile::Grass);
+            }
+        }
+        o
+    }
+
+    #[test]
+    fn action_applies_pending_move_first() {
+        let now = Instant::now();
+        let mut g = Game::new(World::new(5));
+        join(&mut g, 1, "alice", now);
+        g.clear_animals();
+        let o = grass_field(&mut g);
+        let ms = Duration::from_millis;
+        g.event(Event::Msg(1, ClientMsg::Move(Dir::East)), now);
+        g.event(Event::Msg(1, ClientMsg::Move(Dir::East)), now + ms(10));
+        g.event(Event::Msg(1, ClientMsg::Build(Dir::East)), now + ms(20));
+        assert_eq!(g.players[&1].pos, Pos::new(o.x + 2, o.y));
+        assert_eq!(g.world.tile(Pos::new(o.x + 3, o.y)), Tile::BUILT);
+        assert_eq!(g.world.tile(Pos::new(o.x + 2, o.y)), Tile::Grass);
+        assert_eq!(g.players[&1].pending_move, None);
+    }
+
+    #[test]
+    fn wave_hits_player_sharing_tile_with_animal() {
+        let now = Instant::now();
+        let mut g = Game::new(World::new(5));
+        join(&mut g, 1, "alice", now);
+        let mut bob_rx = join_rx(&mut g, 2, "bob", now);
+        g.clear_animals();
+        let o = grass_field(&mut g);
+        let spot = Pos::new(o.x + 1, o.y);
+        g.players.get_mut(&2).unwrap().pos = spot;
+        let dog = g.insert_animal(Species::Dog, spot, None, now).unwrap();
+        drain(&mut bob_rx);
+        g.event(Event::Msg(1, ClientMsg::Interact(Dir::East)), now);
+        assert_eq!(g.animals()[&dog].tamed_by, None, "animal not tamed");
+        let logs = drain(&mut bob_rx);
+        assert!(logs.iter().any(|m| format!("{m:?}").contains("alice waves at you")), "{logs:?}");
     }
 
     #[test]
