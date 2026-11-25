@@ -442,9 +442,9 @@ impl Game {
         p.sent.retain(|c| c.dist(center) <= KEEP_CHUNKS);
     }
 
-    /// Place un animal prévu par la génération. Le chunk est déjà marqué peuplé : si la tuile est
-    /// prise par un animal errant, on prend la tuile libre la plus proche (rayon `SPAWN_SLIDE`),
-    /// sinon l'animal est perdu.
+    /// Place un animal prévu par la génération. Le chunk est déjà marqué peuplé : si la tuile n'est
+    /// pas libre (`ai::free` : animal, joueur ou tuile non praticable), on prend la tuile libre la
+    /// plus proche (rayon `SPAWN_SLIDE`), sinon l'animal est perdu.
     fn place_spawned_animal(&mut self, species: Species, pos: Pos, now: Instant) {
         if crate::ai::free(self, pos) && self.insert_animal(species, pos, None, now).is_some() {
             return;

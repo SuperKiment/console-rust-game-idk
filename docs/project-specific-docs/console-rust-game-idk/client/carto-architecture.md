@@ -13,7 +13,7 @@
 | 171-175 | Docs liées |
 # Client : architecture
 
-> Vérifié le 2026-11-22 depuis `crates/client/src/` (`main.rs`, `app.rs`, `net.rs`, `state.rs`, `input.rs`, `config.rs`, `setup.rs`, `ui/`). Fiche : [vue-ensemble.md](vue-ensemble.md).
+> Vérifié le 2026-11-25 depuis `crates/client/src/` (`main.rs`, `app.rs`, `net.rs`, `state.rs`, `input.rs`, `config.rs`, `setup.rs`, `ui/`). Fiche : [vue-ensemble.md](vue-ensemble.md).
 
 ## Modules
 
@@ -64,7 +64,7 @@ Nom par défaut (`config::default_name`) : `$USER` s'il est non vide, sinon `pla
 
 Aucune simulation côté client : l'écran n'est que le reflet du dernier état reçu. Les actions ne sont envoyées que si `Status::Online`.
 
-Modes de saisie : `Mode::Play` (touches via `BINDINGS`) et `Mode::Chat(String)` (Entrée envoie, Échap annule, 240 caractères max ; Ctrl/Alt/Super + touche ignorés sauf Ctrl+C qui quitte ; un collage devient une ligne unique, retours à la ligne remplacés par des espaces, jamais envoyée toute seule). Esc en jeu (`ConfirmQuit`) : le premier Esc journalise « Press Esc again to quit. », un second dans les 2 s (`QUIT_CONFIRM`) quitte ; statut `Rejected` : un seul Esc quitte (l'événement `Rejected` écrit « Rejected: <raison> » au journal et vide l'état de jeu comme une déconnexion). Ctrl+C quitte tout de suite.
+Modes de saisie : `Mode::Play` (touches via `BINDINGS`) et `Mode::Chat(String)` (Entrée envoie, Échap annule, 240 caractères max ; Ctrl/Alt/Super + touche ignorés sauf Ctrl+C qui quitte ; un collage devient une ligne unique, retours à la ligne remplacés par des espaces, jamais envoyée toute seule). Esc en jeu (`ConfirmQuit`) : le premier Esc journalise « Press Esc again to quit. », un second Esc dans les 2 s (`QUIT_CONFIRM`) quitte, toute autre touche entre les deux désarme la confirmation (`quit_armed = None`) ; statut `Rejected` : un seul Esc quitte (l'événement `Rejected` écrit « Rejected: <raison> » au journal et vide l'état de jeu comme une déconnexion). Ctrl+C quitte tout de suite.
 
 ## Connexion et reconnexion
 
