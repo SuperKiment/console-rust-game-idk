@@ -187,7 +187,8 @@ impl App {
                     text.pop();
                 }
                 KeyCode::Char(c)
-                    if !idk_shared::protocol::is_hidden_char(c) && text.chars().count() < MAX_CHAT =>
+                    if !idk_shared::protocol::is_hidden_after(c, text.chars().next_back())
+                        && text.chars().count() < MAX_CHAT =>
                 {
                     text.push(c)
                 }

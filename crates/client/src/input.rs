@@ -63,14 +63,15 @@ pub fn has_modifier(key: KeyEvent) -> bool {
 
 /// Ajoute un texte collé à `text` : retours à la ligne remplacés par des espaces, borné à `max` caractères.
 pub fn push_pasted(text: &mut String, pasted: &str, max: usize) {
-    let room = max.saturating_sub(text.chars().count());
-    text.extend(
-        pasted
-            .chars()
-            .map(|c| if matches!(c, '\r' | '\n') { ' ' } else { c })
-            .filter(|&c| !idk_shared::protocol::is_hidden_char(c))
-            .take(room),
-    );
+    let pasted: String = pasted.chars().map(|c| if matches!(c, '\r' | '\n') { ' ' } else { c }).collect();
+    for c in pasted.chars() {
+        if text.chars().count() >= max {
+            break;
+        }
+        if !idk_shared::protocol::is_hidden_after(c, text.chars().next_back()) {
+            text.push(c);
+        }
+    }
 }
 
 pub fn action_for(key: KeyEvent) -> Option<Action> {
