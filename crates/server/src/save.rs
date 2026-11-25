@@ -62,11 +62,13 @@ impl Game {
 }
 
 pub fn read(dir: &Path) -> io::Result<Option<SaveData>> {
-    let bytes = match std::fs::read(dir.join(FILE)) {
+    let path = dir.join(FILE);
+    let bytes = match std::fs::read(&path) {
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
         r => r?,
     };
-    decode(&bytes).map(Some)
+    // Le chemin dans le message : le serveur refuse de démarrer, l'utilisateur doit savoir quel fichier.
+    decode(&bytes).map(Some).map_err(|e| io::Error::other(format!("{}: {e}", path.display())))
 }
 
 /// Lit `version` seule (premier champ, varint) avant de décoder le reste : un ancien format
@@ -149,6 +151,18 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
         assert_eq!((back.version, back.seed, back.next_id), (SAVE_VERSION, 42, 7));
         assert_eq!(back.players.len(), 1);
+    }
+
+    #[test]
+    fn corrupt_file_error_names_the_path() {
+        let dir = std::env::temp_dir().join(format!("idk-save-corrupt-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut bytes = postcard::to_stdvec(&sample()).unwrap();
+        bytes.truncate(bytes.len() / 2);
+        std::fs::write(dir.join(FILE), bytes).unwrap();
+        let err = read(&dir).err().unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(err.to_string().contains("world.bin"), "{err}");
     }
 
     #[test]

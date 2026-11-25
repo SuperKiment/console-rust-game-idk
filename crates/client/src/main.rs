@@ -8,9 +8,16 @@ mod ui;
 
 use clap::Parser;
 use crossterm::event::{DisableBracketedPaste, EnableBracketedPaste};
+use idk_shared::protocol::PROTOCOL_VERSION;
+
+/// `--version` : version du paquet et du protocole (`-V` : version du paquet seule).
+fn long_version() -> &'static str {
+    // Appelée une fois au démarrage : la fuite mémoire est négligeable.
+    Box::leak(format!("{} (protocole {})", env!("CARGO_PKG_VERSION"), PROTOCOL_VERSION).into_boxed_str())
+}
 
 #[derive(Parser)]
-#[command(about = "idk game client")]
+#[command(about = "idk game client", version, long_version = long_version())]
 struct Args {
     /// Server address (host:port). Overrides the saved config.
     #[arg(long, env = "IDK_SERVER")]

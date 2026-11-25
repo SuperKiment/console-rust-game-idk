@@ -21,7 +21,9 @@ services:
     environment:
       - IDK_SERVER=server:7777
       - IDK_NAME # optionnel, repris de l'environnement de l'hôte
-    depends_on: [server]
+    depends_on:
+      server:
+        condition: service_healthy
     volumes:
       - client-config:/config
       # Heure locale dans le journal et l'horloge incognito (fuseau de l'hôte, Linux et macOS).
