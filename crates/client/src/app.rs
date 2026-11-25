@@ -17,6 +17,9 @@ const FRAME: Duration = Duration::from_millis(33);
 const NOT_CONNECTED: &str = "Not connected.";
 /// Délai max entre deux Esc pour confirmer la sortie.
 const QUIT_CONFIRM: Duration = Duration::from_secs(2);
+/// Un Esc arrivé moins de ce délai après le précédent est une répétition (autorepeat du terminal,
+/// sans protocole clavier kitty il arrive en `Press`) : ignoré, il ne compte pas comme second appui.
+const ESC_REPEAT: Duration = Duration::from_millis(150);
 
 pub enum Mode {
     Play,
@@ -43,6 +46,8 @@ pub struct App {
     quit: bool,
     /// Instant du premier Esc en jeu, en attente de confirmation.
     quit_armed: Option<Instant>,
+    /// Instant du dernier Esc reçu (toutes modes), pour filtrer l'autorepeat.
+    last_esc: Option<Instant>,
 }
 
 impl App {
@@ -60,6 +65,7 @@ impl App {
             sent,
             quit: false,
             quit_armed: None,
+            last_esc: None,
         }
     }
 }
@@ -79,6 +85,7 @@ pub async fn run(terminal: &mut DefaultTerminal, config: Config) -> std::io::Res
         sent: mpsc::unbounded_channel().1,
         quit: false,
         quit_armed: None,
+        last_esc: None,
     };
     let mut input = EventStream::new();
     let mut frame = tokio::time::interval(FRAME);
@@ -139,6 +146,11 @@ impl App {
     }
 
     fn on_terminal(&mut self, ev: Event) {
+        self.on_terminal_at(ev, Instant::now());
+    }
+
+    /// Comme `on_terminal`, avec l'instant de réception injectable (tests).
+    fn on_terminal_at(&mut self, ev: Event, now: Instant) {
         let key = match ev {
             Event::Key(key) => key,
             // Collage (bracketed paste) : du texte, jamais des commandes.
@@ -152,6 +164,18 @@ impl App {
         };
         if key.kind == KeyEventKind::Release {
             return;
+        }
+        // Autorepeat d'Esc : ignoré, mais il repousse l'horodatage (une rafale continue ne quitte jamais).
+        if key.code == KeyCode::Esc {
+            let repeat = key.kind == KeyEventKind::Repeat
+                || self.last_esc.is_some_and(|t| now.duration_since(t) < ESC_REPEAT);
+            self.last_esc = Some(now);
+            if repeat {
+                if self.quit_armed.is_some() {
+                    self.quit_armed = Some(now);
+                }
+                return;
+            }
         }
         // Seuls deux Esc consécutifs quittent : toute autre touche désarme.
         if key.code != KeyCode::Esc {
@@ -196,7 +220,10 @@ impl App {
             },
             Mode::Play => {
                 if let Some(action) = action_for(key) {
-                    self.act(action);
+                    match action {
+                        Action::ConfirmQuit => self.confirm_quit(now),
+                        _ => self.act(action),
+                    }
                 }
             }
         }
@@ -301,6 +328,62 @@ mod tests {
         app.confirm_quit(t);
         app.confirm_quit(t + Duration::from_millis(500));
         assert!(app.quit);
+    }
+
+    fn esc() -> Event {
+        Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))
+    }
+
+    fn ms(n: u64) -> Duration {
+        Duration::from_millis(n)
+    }
+
+    #[test]
+    fn esc_autorepeat_does_not_quit() {
+        let mut app = App::for_test(Status::Online);
+        let t = Instant::now();
+        app.on_terminal_at(esc(), t);
+        app.on_terminal_at(esc(), t + ms(40));
+        assert!(!app.quit);
+    }
+
+    #[test]
+    fn esc_after_pause_quits() {
+        let mut app = App::for_test(Status::Online);
+        let t = Instant::now();
+        app.on_terminal_at(esc(), t);
+        app.on_terminal_at(esc(), t + ms(500));
+        assert!(app.quit);
+    }
+
+    #[test]
+    fn esc_burst_never_quits() {
+        let mut app = App::for_test(Status::Online);
+        let t = Instant::now();
+        for i in 0..10 {
+            app.on_terminal_at(esc(), t + ms(40 * i));
+        }
+        assert!(!app.quit);
+    }
+
+    #[test]
+    fn esc_repeat_kind_is_ignored() {
+        let mut app = App::for_test(Status::Online);
+        let t = Instant::now();
+        app.on_terminal_at(esc(), t);
+        let mut ev = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+        ev.kind = KeyEventKind::Repeat;
+        app.on_terminal_at(Event::Key(ev), t + ms(500));
+        assert!(!app.quit);
+    }
+
+    #[test]
+    fn esc_closing_chat_does_not_arm_on_repeat() {
+        let mut app = chat_app("");
+        let t = Instant::now();
+        app.on_terminal_at(esc(), t);
+        app.on_terminal_at(esc(), t + ms(40));
+        assert!(matches!(app.mode, Mode::Play) && !app.quit && app.quit_armed.is_none());
     }
 
     #[test]
