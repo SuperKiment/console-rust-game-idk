@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::time::Instant;
 
 use idk_shared::content::{PLAYER_COLORS, Rgb};
+use idk_shared::geo::Pos;
 use idk_shared::protocol::{LogKind, Look};
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
@@ -107,7 +108,7 @@ pub fn draw(f: &mut Frame, app: &App) {
                 kv("facing", format!("{faced} ({})", s.facing().name())),
             ]
         }
-        None => vec![Line::styled("not in the world yet", dim)],
+        None => me_offline_lines(s.is_offline(), s.map_center(), dim, text),
     };
     f.render_widget(Paragraph::new(me_lines).block(block("you")), me_area);
 
@@ -191,6 +192,21 @@ pub fn draw(f: &mut Frame, app: &App) {
     draw_status(f, app, t, map_area);
 }
 
+/// Panneau « you » sans joueur : hors ligne (dernière position connue gardée) ou pas encore entré.
+fn me_offline_lines(offline: bool, last: Option<Pos>, dim: Style, text: Style) -> Vec<Line<'static>> {
+    if !offline {
+        return vec![Line::styled("not in the world yet", dim)];
+    }
+    let mut lines = vec![Line::styled("offline", dim)];
+    if let Some(p) = last {
+        lines.push(Line::from(vec![
+            Span::styled(format!("{:<8}", "pos"), dim),
+            Span::styled(format!("{}, {}", p.x, p.y), text),
+        ]));
+    }
+    lines
+}
+
 fn plural(name: &str, n: usize) -> String {
     match (n, name) {
         (1, _) => name.to_string(),
@@ -236,10 +252,7 @@ fn draw_log(f: &mut Frame, app: &App, t: &Theme, area: Rect, block: Block) {
         .collect();
     let [log_area, input_area] =
         Layout::vertical([Constraint::Min(0), Constraint::Length(input_rows)]).areas(inner);
-    // Retour à la ligne, puis défilement pour garder les lignes les plus récentes visibles
-    let log_text = Paragraph::new(lines).wrap(Wrap { trim: false });
-    let hidden = log_text.line_count(log_area.width).saturating_sub(log_area.height as usize);
-    f.render_widget(log_text.scroll((hidden.min(u16::MAX as usize) as u16, 0)), log_area);
+    render_tail(f, lines, log_area);
     if let Mode::Chat(input) = &app.mode {
         let line = Line::from(vec![
             Span::styled("> ", Style::new().fg(paint(t.accent)).bold()),
@@ -251,6 +264,14 @@ fn draw_log(f: &mut Frame, app: &App, t: &Theme, area: Rect, block: Block) {
         ]);
         f.render_widget(Paragraph::new(line), input_area);
     }
+}
+
+/// Affiche `lines` avec retour à la ligne, puis défilement pour garder les lignes les plus récentes
+/// visibles. Commun au log du layout normal et à celui du layout incognito.
+pub(super) fn render_tail(f: &mut Frame, lines: Vec<Line>, area: Rect) {
+    let text = Paragraph::new(lines).wrap(Wrap { trim: false });
+    let hidden = text.line_count(area.width).saturating_sub(area.height as usize);
+    f.render_widget(text.scroll((hidden.min(u16::MAX as usize) as u16, 0)), area);
 }
 
 /// Centered popup while not connected.
@@ -351,6 +372,19 @@ mod tests {
             now,
         );
         app
+    }
+
+    #[test]
+    fn me_panel_says_offline_with_last_position() {
+        let mut app = app_with_me();
+        app.state.disconnect();
+        app.status = Status::Offline("lost".into());
+        let s = screen_at(&app, 120, 40);
+        assert!(s.contains("offline") && s.contains("pos") && s.contains("3, 4"), "{s}");
+        assert!(!s.contains("not in the world yet"), "{s}");
+        // Avant le premier Welcome : pas encore dans le monde
+        let fresh = App::for_test(Status::Connecting);
+        assert!(screen_at(&fresh, 120, 40).contains("not in the world yet"));
     }
 
     #[test]

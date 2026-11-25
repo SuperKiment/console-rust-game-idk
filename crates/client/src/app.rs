@@ -104,7 +104,7 @@ pub async fn run(terminal: &mut DefaultTerminal, config: Config) -> std::io::Res
 
 /// SIGTERM (`docker stop`) ou SIGHUP (fenêtre de terminal fermée). Ne se résout jamais hors Unix
 /// ou si l'installation du gestionnaire échoue.
-async fn terminate_signal() {
+pub(crate) async fn terminate_signal() {
     #[cfg(unix)]
     {
         use tokio::signal::unix::{SignalKind, signal};
