@@ -110,7 +110,7 @@ fn draw_log(f: &mut Frame, app: &App, area: Rect) {
             ])
         })
         .collect();
-    f.render_widget(Paragraph::new(lines), body);
+    super::game::render_tail(f, lines, body);
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -299,5 +299,19 @@ mod tests {
         assert_eq!(command_line("日本語", 5), ":語");
         assert_eq!(command_line("日本語", 8), ":日本語");
         assert_eq!(Line::from(command_line("a日本語", 6)).width(), 5);
+    }
+
+    #[test]
+    fn long_chat_wraps_and_end_stays_visible() {
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+        let mut app = App::for_test(Status::Online);
+        let text = format!("{}FINMSG", "z".repeat(160));
+        app.state.log.push_back(entry(0, LogKind::Chat { from: "bob".into() }, &text));
+        app.state.log.push_back(entry(0, LogKind::System, "derniere"));
+        let mut term = Terminal::new(TestBackend::new(120, 40)).unwrap();
+        term.draw(|f| draw(f, &app)).unwrap();
+        let screen = term.backend().to_string();
+        assert!(screen.contains("FINMSG") && screen.contains("derniere"), "{screen}");
     }
 }

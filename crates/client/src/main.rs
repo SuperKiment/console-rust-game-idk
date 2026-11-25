@@ -61,7 +61,7 @@ async fn start(
         Some(c) if !args.configure => c,
         base => {
             // First launch or `--configure`: ask, then save. Cancelling quits without saving.
-            let Some(c) = setup::run(terminal, base.unwrap_or_default())? else { return Ok(()) };
+            let Some(c) = setup::run(terminal, base.unwrap_or_default()).await? else { return Ok(()) };
             // Échec (ex. volume en lecture seule) : on joue quand même avec la config en mémoire.
             if let Err(e) = config::save(&c) {
                 *save_warning = Some(format!("Config not saved ({}): {e}", config::path().display()));

@@ -5,7 +5,8 @@
 
 use std::io;
 
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::event::{Event, EventStream, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use futures::StreamExt;
 use idk_shared::protocol::MAX_NAME;
 use ratatui::DefaultTerminal;
 
@@ -199,12 +200,23 @@ fn non_empty_or<'a>(typed: &'a str, default: &'a str) -> &'a str {
     if typed.is_empty() { default } else { typed }
 }
 
-/// Runs the wizard until it is confirmed (`Some`) or cancelled (`None`).
-pub fn run(terminal: &mut DefaultTerminal, base: Config) -> io::Result<Option<Config>> {
+/// Runs the wizard until it is confirmed (`Some`) or cancelled (`None`). SIGTERM/SIGHUP count as a
+/// cancel: the caller then restores the terminal as for Esc.
+pub async fn run(terminal: &mut DefaultTerminal, base: Config) -> io::Result<Option<Config>> {
     let mut wizard = Wizard::new(base);
+    let mut input = EventStream::new();
+    let mut terminate = std::pin::pin!(crate::app::terminate_signal());
     loop {
         terminal.draw(|f| crate::ui::setup::draw(f, &wizard))?;
-        let key = match event::read()? {
+        let ev = tokio::select! {
+            ev = input.next() => match ev {
+                Some(Ok(ev)) => ev,
+                Some(Err(e)) => return Err(e),
+                None => return Ok(None),
+            },
+            _ = &mut terminate => return Ok(None),
+        };
+        let key = match ev {
             Event::Key(key) => key,
             Event::Paste(s) => {
                 wizard.on_paste(&s);
