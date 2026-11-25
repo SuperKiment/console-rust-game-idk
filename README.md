@@ -48,7 +48,7 @@ Options client : `--server`, `--name`, `--incognito`, `--configure` (env `IDK_SE
 | `x` | casser |
 | `t`, entrée | chat (entrée envoie, `esc` annule) |
 | `F2` | basculer le mode incognito |
-| `esc` deux fois de suite (sous 2 s, toute autre touche annule), `ctrl-c` | quitter (`ctrl-c` directement) |
+| `esc` deux fois de suite (entre 0,15 et 2 s d'écart, toute autre touche annule ; esc maintenu ne quitte pas), `ctrl-c` | quitter (`ctrl-c` directement) |
 
 ## Config client
 
