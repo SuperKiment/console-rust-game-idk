@@ -9,7 +9,7 @@ use idk_shared::content::{Effect, Species, Tile, player_color_index};
 use idk_shared::geo::{CHUNK_SIZE, ChunkPos, Dir, Pos};
 use idk_shared::protocol::{
     ClientMsg, EntityId, EntityView, KEEP_CHUNKS, LogKind, LogLine, Look, MAX_CHAT, ServerMsg, VIEW_CHUNKS,
-    has_visible_char, is_hidden_char,
+    has_visible_char, strip_hidden,
 };
 use tokio::sync::mpsc::Sender;
 use tokio::sync::mpsc::error::TrySendError;
@@ -486,10 +486,10 @@ impl Game {
     }
 }
 
-/// Message de chat : sans caractères de contrôle ni de format Unicode (`is_hidden_char`), sans espaces aux bords, au plus `MAX_CHAT`
+/// Message de chat : sans caractères de contrôle ni de format Unicode (`strip_hidden`), sans espaces aux bords, au plus `MAX_CHAT`
 /// caractères. `None` si rien ne reste.
 fn clean_chat(raw: &str) -> Option<String> {
-    let filtered: String = raw.chars().filter(|&c| !is_hidden_char(c)).collect();
+    let filtered = strip_hidden(raw);
     let text: String = filtered.trim().chars().take(MAX_CHAT).collect();
     let text = text.trim_end();
     if has_visible_char(text) { Some(text.to_string()) } else { None }
