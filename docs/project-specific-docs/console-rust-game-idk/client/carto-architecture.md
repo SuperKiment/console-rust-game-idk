@@ -25,7 +25,7 @@
 | `src/app.rs` | `App`, boucle `tokio::select`, modes `Play` / `Chat`, statut de connexion |
 | `src/net.rs` | tâche de connexion avec reconnexion automatique |
 | `src/state.rs` | `GameState` : ce que le client sait du monde |
-| `src/input.rs` | table `BINDINGS`, `action_for` |
+| `src/input.rs` | table `BINDINGS`, `action_for`, `push_pasted`, `pop_grapheme` |
 | `src/ui/mod.rs` | `draw` : choisit le layout normal ou incognito |
 | `src/ui/game.rs`, `incognito.rs` | les deux layouts |
 | `src/ui/map.rs` | rendu de la carte, partagé par les layouts |
@@ -164,7 +164,7 @@ flowchart TD
 
 ## Table BINDINGS
 
-`crates/client/src/input.rs` : tableau de `Binding { keys, action, help }`. `action_for` met la lettre en minuscule, traite Ctrl+C comme `Quit`, puis cherche la première ligne qui contient la touche. Le champ `help` génère le panneau `keys` : une ligne sans `help` est une variante d'une ligne affichée. Un test vérifie qu'aucune touche n'est liée deux fois.
+`crates/client/src/input.rs` : tableau de `Binding { keys, action, help }`. `action_for` met la lettre en minuscule, traite Ctrl+C comme `Quit`, puis cherche la première ligne qui contient la touche. Le champ `help` génère le panneau `keys` : une ligne sans `help` est une variante d'une ligne affichée. Un test vérifie qu'aucune touche n'est liée deux fois. La saisie de texte (chat, assistant) retire au Backspace un graphème entier (`pop_grapheme`), et `ui::tail_fit` mesure la largeur par graphème (comme ratatui) : `❤️` = 2 colonnes, pas `❤` + U+FE0F. Les plafonds (`MAX_CHAT`, `max`) restent comptés en `chars()`, comme côté serveur.
 
 Ajouter une touche : une ligne dans `BINDINGS`, une variante dans `Action`, un cas dans `App::act` (`crates/client/src/app.rs`). Les touches sont listées dans le [README](../../../../README.md), section « Contrôles ».
 
