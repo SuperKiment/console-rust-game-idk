@@ -19,6 +19,8 @@ Sur la machine hôte :
 docker compose up -d server          # IDK_SEED=42 pour fixer la graine d'un nouveau monde
 ```
 
+L'image serveur a un healthcheck (connexion TCP locale) : `docker compose ps` indique `healthy` une fois le serveur prêt, et le client compose attend cet état pour démarrer.
+
 Les joueurs se connectent (port 7777) avec, au choix :
 
 ```sh
@@ -35,7 +37,7 @@ cargo run --release -p idk-server -- --port 7777 --world ./world
 cargo run --release -p idk-client -- --server 127.0.0.1:7777
 ```
 
-Options serveur : `--bind`, `--port`, `--world`, `--seed` (env `IDK_BIND`, `IDK_PORT`, `IDK_WORLD`, `IDK_SEED`).
+Options serveur : `--bind`, `--port`, `--world`, `--seed` (env `IDK_BIND`, `IDK_PORT`, `IDK_WORLD`, `IDK_SEED`). `--version` (serveur et client) affiche la version du paquet et celle du protocole.
 Options client : `--server`, `--name`, `--incognito`, `--configure` (env `IDK_SERVER`, `IDK_NAME`). Les options de la ligne de commande ne valent que pour la session : elles ne sont pas écrites dans la config.
 
 ## Contrôles

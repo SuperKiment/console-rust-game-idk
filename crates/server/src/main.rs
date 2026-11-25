@@ -1,10 +1,16 @@
 use std::path::PathBuf;
 
 use clap::Parser;
-use idk_shared::protocol::DEFAULT_PORT;
+use idk_shared::protocol::{DEFAULT_PORT, PROTOCOL_VERSION};
+
+/// `--version` : version du paquet et du protocole (`-V` : version du paquet seule).
+fn long_version() -> &'static str {
+    // Appelée une fois au démarrage : la fuite mémoire est négligeable.
+    Box::leak(format!("{} (protocole {})", env!("CARGO_PKG_VERSION"), PROTOCOL_VERSION).into_boxed_str())
+}
 
 #[derive(Parser)]
-#[command(about = "idk game server")]
+#[command(about = "idk game server", version, long_version = long_version())]
 struct Args {
     /// Address to listen on.
     #[arg(long, env = "IDK_BIND", default_value = "0.0.0.0")]

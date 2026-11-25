@@ -16,6 +16,9 @@ USER idk
 ENV IDK_WORLD=/data IDK_BIND=0.0.0.0
 VOLUME /data
 EXPOSE 7777
+# bookworm-slim a bash : connexion TCP locale via /dev/tcp (pas d'option dans le binaire).
+HEALTHCHECK --interval=5s --timeout=3s --start-period=5s --retries=3 \
+    CMD ["bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/${IDK_PORT:-7777}"]
 ENTRYPOINT ["idk-server"]
 
 FROM debian:bookworm-slim AS client
