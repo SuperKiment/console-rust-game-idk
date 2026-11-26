@@ -5,10 +5,10 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::content::{Biome, Effect, Species, Tile};
+use crate::content::{Biome, Effect, Item, Species, Tile};
 use crate::geo::{CHUNK_AREA, ChunkPos, Dir, Pos};
 
-pub const PROTOCOL_VERSION: u32 = 2;
+pub const PROTOCOL_VERSION: u32 = 3;
 pub const DEFAULT_PORT: u16 = 7777;
 /// Radius (in chunks) of the area the server streams around each player.
 pub const VIEW_CHUNKS: i32 = 3;
@@ -130,6 +130,8 @@ pub enum ServerMsg {
     Online(Vec<(String, u8)>),
     /// Connection refused (e.g. protocol mismatch). The server closes the socket after it.
     Rejected(String),
+    /// Inventaire complet du joueur, envoyé au Welcome et à chaque changement.
+    Inventory(Vec<(Item, u16)>),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
