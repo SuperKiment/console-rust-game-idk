@@ -14,7 +14,7 @@ async fn start(
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
-    let opts = idk_server::Options { world_dir, seed: Some(1234) };
+    let opts = idk_server::Options { world_dir, seed: Some(1234), backups: 0 };
     let task = tokio::spawn(async move {
         idk_server::run(listener, opts, async {
             let _ = stopped.await;

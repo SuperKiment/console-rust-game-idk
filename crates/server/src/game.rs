@@ -201,6 +201,7 @@ impl Game {
             pending_move: None,
         };
         self.players.insert(conn, player);
+        self.send_inventory(conn);
         if replaced {
             tracing::info!(%name, ?pos, "player reconnected, old session replaced");
             self.broadcast_log(LogKind::System, format!("{name} reconnected."));
@@ -350,6 +351,7 @@ impl Game {
                 };
                 let Some(player) = self.players.get_mut(&conn) else { return };
                 if add_item(&mut player.inventory, item) {
+                    self.send_inventory(conn);
                     let text = format!("You break the {} and get 1 {}.", def.name, item.def().name);
                     self.tell(conn, LogKind::Info, text);
                 } else {
@@ -440,6 +442,13 @@ impl Game {
     pub fn tell(&self, conn: ConnId, kind: LogKind, text: impl Into<String>) {
         if let Some(p) = self.players.get(&conn) {
             p.send(ServerMsg::Log(LogLine::new(kind, text)));
+        }
+    }
+
+    /// Envoie au joueur son inventaire complet.
+    fn send_inventory(&self, conn: ConnId) {
+        if let Some(p) = self.players.get(&conn) {
+            p.send(ServerMsg::Inventory(p.inventory.clone()));
         }
     }
 
@@ -772,6 +781,38 @@ pub(crate) mod tests {
         let logs = break_east(&mut g, &mut rx, Tile::Tree, now);
         assert_eq!(g.players[&1].inventory, vec![(Item::Wood, 1)]);
         assert_eq!(logs, vec!["You break the tree and get 1 wood.".to_string()]);
+    }
+
+    #[test]
+    fn inventory_sent_after_welcome_and_after_change() {
+        let now = Instant::now();
+        let mut g = Game::new(World::new(5));
+        let mut rx = join_rx(&mut g, 1, "alice", now);
+        let msgs = drain(&mut rx);
+        assert!(matches!(msgs[0], ServerMsg::Welcome { .. }));
+        let inv_pos = msgs.iter().position(|m| matches!(m, ServerMsg::Inventory(_))).expect("inventory sent");
+        assert!(inv_pos > 0, "after Welcome");
+        assert_eq!(msgs[inv_pos], ServerMsg::Inventory(vec![]));
+
+        g.clear_animals();
+        g.players.get_mut(&1).unwrap().inventory = vec![(Item::Wood, 1)];
+        let o = grass_field(&mut g);
+        g.world.set_tile(Pos::new(o.x + 1, o.y), Tile::Tree);
+        drain(&mut rx);
+        g.event(Event::Msg(1, ClientMsg::Break(Dir::East)), now);
+        let invs: Vec<_> =
+            drain(&mut rx).into_iter().filter(|m| matches!(m, ServerMsg::Inventory(_))).collect();
+        assert_eq!(invs, vec![ServerMsg::Inventory(vec![(Item::Wood, 2)])]);
+    }
+
+    #[test]
+    fn replacing_session_sends_inventory_to_new_connection() {
+        let now = Instant::now();
+        let mut g = Game::new(World::new(5));
+        let _old = join_rx(&mut g, 1, "alice", now);
+        g.players.get_mut(&1).unwrap().inventory = vec![(Item::Stone, 3)];
+        let mut new_rx = join_rx(&mut g, 2, "alice", now);
+        assert!(drain(&mut new_rx).contains(&ServerMsg::Inventory(vec![(Item::Stone, 3)])));
     }
 
     #[test]

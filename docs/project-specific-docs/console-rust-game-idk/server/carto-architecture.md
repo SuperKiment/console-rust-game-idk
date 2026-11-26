@@ -11,8 +11,8 @@
 | 119-145 | Monde par chunks |
 | 146-152 | — Streaming de chunks |
 | 153-169 | IA des animaux (paramétrique) |
-| 170-197 | Sauvegarde |
-| 198-202 | Docs liées |
+| 170-199 | Sauvegarde |
+| 200-204 | Docs liées |
 # Serveur : architecture
 
 > Vérifié le 2026-11-25 depuis `crates/server/src/` (`lib.rs`, `main.rs`, `net.rs`, `game.rs`, `ai.rs`, `save.rs`, `rng.rs`, `world/`). Fiche : [vue-ensemble.md](vue-ensemble.md).
@@ -184,6 +184,8 @@ Déclencheurs (`crates/server/src/lib.rs`) : toutes les 60 s (`AUTOSAVE`), et à
 
 - **Autosave asynchrone** : `game.to_save()` (clone, rapide) est pris dans la boucle de jeu, puis `save::write` (fsync) part dans `tokio::task::spawn_blocking` : les ticks ne sont plus bloqués par le disque. `run()` garde le `JoinHandle` ; si l'écriture précédente tourne encore (`!is_finished()`), le tick d'autosave est ignoré (« previous autosave still writing, skipped »), jamais deux écritures en parallèle.
 - **Sauvegarde finale** : synchrone, après avoir attendu (`await`) l'éventuelle écriture d'autosave en cours, pour ne jamais écrire deux fois en même temps dans `world.bin.tmp`. Au démarrage : sauvegarde existante (graine ignorée) sinon nouveau monde avec `--seed` ou une graine tirée de l'horloge.
+
+- **Copies tournantes** : `save::rotate_backups(dir, keep)` supprime `world.bin.<keep>`, décale `world.bin.<i>` vers `.<i+1>` (i décroissant) puis **copie** `world.bin` vers `world.bin.1` (l'original reste). `keep` = `Options.backups` (`--backups`, env `IDK_BACKUPS`, défaut 3 ; 0 = aucune, `world.bin` absent = rien). Appelée une fois au démarrage après un `save::read` réussi, puis par la tâche `spawn_blocking` de l'autosave tous les `BACKUP_EVERY` (10) autosaves (10 min), **avant** `save::write` (même thread). Pas de rotation à l'arrêt. Échec de rotation : `warn`, sans bloquer. Save illisible : l'erreur (chemin inclus) est suivie de « backups: world.bin.1..N in <dir> » si `world.bin.1` existe. Restauration manuelle uniquement.
 
 Chargement : `save::decode` lit d'abord `version` seule (`postcard::take_from_bytes::<u32>`, premier champ de `SaveData`, varint), puis dispatche par `match`. Deux bras : `SAVE_VERSION` (2) décode `SaveData` ; `1` décode `v1::SaveData` (copie figée, sans inventaire) puis la convertit (`From`, inventaires vides). `validate` s'applique ensuite aux deux.
 

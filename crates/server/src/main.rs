@@ -23,6 +23,9 @@ struct Args {
     /// Seed of a new world (random when omitted; ignored if a save exists).
     #[arg(long, env = "IDK_SEED")]
     seed: Option<u64>,
+    /// Number of rotating backups of world.bin (0 = none).
+    #[arg(long, env = "IDK_BACKUPS", default_value_t = 3)]
+    backups: u32,
 }
 
 #[tokio::main]
@@ -35,7 +38,7 @@ async fn main() -> std::io::Result<()> {
     let args = Args::parse();
     let listener = tokio::net::TcpListener::bind((args.bind.as_str(), args.port)).await?;
     tracing::info!("listening on {}", listener.local_addr()?);
-    let opts = idk_server::Options { world_dir: Some(args.world), seed: args.seed };
+    let opts = idk_server::Options { world_dir: Some(args.world), seed: args.seed, backups: args.backups };
     idk_server::run(listener, opts, shutdown_signal()).await
 }
 
