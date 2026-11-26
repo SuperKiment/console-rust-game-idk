@@ -37,7 +37,7 @@ cargo run --release -p idk-server -- --port 7777 --world ./world
 cargo run --release -p idk-client -- --server 127.0.0.1:7777
 ```
 
-Options serveur : `--bind`, `--port`, `--world`, `--seed` (env `IDK_BIND`, `IDK_PORT`, `IDK_WORLD`, `IDK_SEED`). `--version` (serveur et client) affiche la version du paquet et celle du protocole.
+Options serveur : `--bind`, `--port`, `--world`, `--seed`, `--backups` (env `IDK_BIND`, `IDK_PORT`, `IDK_WORLD`, `IDK_SEED`, `IDK_BACKUPS`). `--version` (serveur et client) affiche la version du paquet et celle du protocole.
 Options client : `--server`, `--name`, `--incognito`, `--configure` (env `IDK_SERVER`, `IDK_NAME`). Les options de la ligne de commande ne valent que pour la session : elles ne sont pas écrites dans la config.
 
 ## Contrôles
@@ -82,3 +82,5 @@ Remplace l'interface par une fausse fenêtre d'éditeur de code (onglets, numér
 ## Sauvegarde du monde
 
 Le serveur sauvegarde toutes les 60 s et à l'arrêt (`ctrl-c` ou SIGTERM). En docker, le monde vit dans le volume nommé `world` (`/data`) ; `docker compose down` le garde, `docker compose down -v` le supprime.
+
+Copies tournantes : `world.bin.1` (la plus récente) à `world.bin.N`, `N` = `--backups` (défaut 3, 0 = aucune). Rotation au démarrage (après lecture réussie) puis toutes les 10 autosaves (10 min), pas à l'arrêt. Restauration manuelle : serveur arrêté, copier `world.bin.N` sur `world.bin`. Si `world.bin` est illisible, le serveur refuse de démarrer et indique les copies.
