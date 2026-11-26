@@ -6,11 +6,13 @@
 
 mod biomes;
 mod effects;
+mod items;
 mod species;
 mod tiles;
 
 pub use biomes::{BIOMES, Biome, BiomeDef};
 pub use effects::{EFFECTS, Effect, EffectDef};
+pub use items::{ITEMS, Item, ItemDef};
 pub use species::{Ai, SPECIES, Species, SpeciesDef};
 pub use tiles::{TILES, Tile, TileDef};
 
@@ -93,6 +95,7 @@ mod tests {
             .map(|t| t.glyph)
             .chain(SPECIES.iter().map(|s| s.glyph))
             .chain(EFFECTS.iter().map(|e| e.glyph))
+            .chain(ITEMS.iter().map(|i| i.glyph))
             .chain([PLAYER_GLYPH]);
         for g in glyphs {
             assert!(g.ascii.is_ascii(), "{g:?}");
