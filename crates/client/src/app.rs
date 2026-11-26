@@ -1,5 +1,6 @@
 //! Client main loop: terminal input, network events and rendering.
 
+use std::cell::Cell;
 use std::time::{Duration, Instant};
 
 use crossterm::event::{Event, EventStream, KeyCode, KeyEventKind};
@@ -24,10 +25,16 @@ const QUIT_CONFIRM: Duration = Duration::from_secs(2);
 /// Un Esc arrivé moins de ce délai après le précédent est une répétition (autorepeat du terminal,
 /// sans protocole clavier kitty il arrive en `Press`) : ignoré, il ne compte pas comme second appui.
 const ESC_REPEAT: Duration = Duration::from_millis(150);
+/// Lignes sautées par PgUp / PgDn dans l'écran d'aide.
+const HELP_PAGE: u16 = 10;
 
 pub enum Mode {
     Play,
     Chat(String),
+    /// Écran d'aide (F1) ; `scroll` = lignes masquées en haut.
+    Help {
+        scroll: u16,
+    },
 }
 
 pub enum Status {
@@ -58,6 +65,8 @@ pub struct App {
     history_pos: Option<usize>,
     /// Tampon en cours de saisie, sauvegardé au premier ↑ et restauré en sortant par ↓.
     chat_draft: String,
+    /// Défilement max de l'aide, écrit par `ui::help::draw` (la hauteur visible n'est connue qu'au rendu).
+    pub help_max_scroll: Cell<u16>,
 }
 
 impl App {
@@ -79,6 +88,7 @@ impl App {
             chat_history: Vec::new(),
             history_pos: None,
             chat_draft: String::new(),
+            help_max_scroll: Cell::new(0),
         }
     }
 }
@@ -102,6 +112,7 @@ pub async fn run(terminal: &mut DefaultTerminal, config: Config) -> std::io::Res
         chat_history: Vec::new(),
         history_pos: None,
         chat_draft: String::new(),
+        help_max_scroll: Cell::new(0),
     };
     let mut input = EventStream::new();
     let mut frame = tokio::time::interval(FRAME);
@@ -197,8 +208,8 @@ impl App {
         if key.code != KeyCode::Esc {
             self.quit_armed = None;
         }
-        // Ctrl+C quitte aussi en chat ; les autres Ctrl/Alt/Super + touche sont ignorés.
-        if matches!(self.mode, Mode::Chat(_)) && has_modifier(key) {
+        // Ctrl+C quitte aussi en chat et en aide ; les autres Ctrl/Alt/Super + touche sont ignorés.
+        if matches!(self.mode, Mode::Chat(_) | Mode::Help { .. }) && has_modifier(key) {
             if action_for(key) == Some(Action::Quit) {
                 self.quit = true;
             }
@@ -260,6 +271,19 @@ impl App {
                 }
                 _ => {}
             },
+            // Aide : Esc ou F1 referme (sans armer la sortie), ↑/↓ PgUp/PgDn défilent, le reste est ignoré.
+            Mode::Help { scroll } => {
+                let max = self.help_max_scroll.get();
+                // `min(max)` d'abord : une fenêtre agrandie depuis le dernier rendu ne laisse pas de touches mortes.
+                match key.code {
+                    KeyCode::Esc | KeyCode::F(1) => self.mode = Mode::Play,
+                    KeyCode::Up => *scroll = (*scroll).min(max).saturating_sub(1),
+                    KeyCode::Down => *scroll = scroll.saturating_add(1).min(max),
+                    KeyCode::PageUp => *scroll = (*scroll).min(max).saturating_sub(HELP_PAGE),
+                    KeyCode::PageDown => *scroll = scroll.saturating_add(HELP_PAGE).min(max),
+                    _ => {}
+                }
+            }
             Mode::Play => {
                 if let Some(action) = action_for(key) {
                     match action {
@@ -289,6 +313,9 @@ impl App {
                 self.mode = Mode::Chat(String::new());
             }
             Action::ToggleIncognito => self.incognito = !self.incognito,
+            // Incognito : aucun popup de jeu dans le faux éditeur.
+            Action::Help if self.incognito => {}
+            Action::Help => self.mode = Mode::Help { scroll: 0 },
             Action::LogUp => self.state.scroll_log(true, LOG_PAGE),
             Action::LogDown => self.state.scroll_log(false, LOG_PAGE),
             Action::LogEnd => self.state.log_scroll = 0,
@@ -657,6 +684,84 @@ mod tests {
         app.on_terminal(Event::Key(KeyEvent::new(KeyCode::End, KeyModifiers::NONE)));
         let s = screen(&app);
         assert!(s.contains("msg29") && !s.contains("↓5"), "{s}");
+    }
+
+    fn key(code: KeyCode) -> Event {
+        Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
+    }
+
+    #[test]
+    fn f1_then_esc_returns_to_play_without_quit_prompt() {
+        let mut app = App::for_test(Status::Online);
+        app.on_terminal(key(KeyCode::F(1)));
+        assert!(matches!(app.mode, Mode::Help { scroll: 0 }));
+        app.on_terminal(key(KeyCode::Esc));
+        assert!(matches!(app.mode, Mode::Play));
+        assert!(!app.quit && app.quit_armed.is_none());
+        assert!(app.state.log.is_empty(), "no log line expected");
+    }
+
+    #[test]
+    fn f1_toggles_help_and_ignores_other_keys() {
+        let mut app = App::for_test(Status::Online);
+        app.on_terminal(key(KeyCode::F(1)));
+        for c in ['z', 'b', 't', 'x'] {
+            app.on_terminal(key(KeyCode::Char(c)));
+        }
+        app.on_terminal(key(KeyCode::Enter));
+        app.on_terminal(key(KeyCode::F(2)));
+        assert!(matches!(app.mode, Mode::Help { .. }) && !app.incognito);
+        assert!(app.sent.try_recv().is_err());
+        app.on_terminal(key(KeyCode::F(1)));
+        assert!(matches!(app.mode, Mode::Play));
+    }
+
+    #[test]
+    fn help_esc_autorepeat_never_quits() {
+        let mut app = App::for_test(Status::Online);
+        app.on_terminal(key(KeyCode::F(1)));
+        let t = Instant::now();
+        for i in 0..5 {
+            app.on_terminal_at(esc(), t + ms(40 * i));
+        }
+        assert!(matches!(app.mode, Mode::Play) && !app.quit && app.quit_armed.is_none());
+    }
+
+    #[test]
+    fn help_scroll_keys_move_help_not_log() {
+        let mut app = App::for_test(Status::Online);
+        for i in 0..30 {
+            app.state.push_log(LogLine::new(LogKind::Info, i.to_string()));
+        }
+        app.help_max_scroll.set(25);
+        app.on_terminal(key(KeyCode::F(1)));
+        app.on_terminal(key(KeyCode::Down));
+        app.on_terminal(key(KeyCode::Down));
+        assert!(matches!(app.mode, Mode::Help { scroll: 2 }));
+        app.on_terminal(key(KeyCode::PageDown));
+        assert!(matches!(app.mode, Mode::Help { scroll: 12 }));
+        app.on_terminal(key(KeyCode::PageDown));
+        app.on_terminal(key(KeyCode::PageDown));
+        assert!(matches!(app.mode, Mode::Help { scroll: 25 }));
+        app.on_terminal(key(KeyCode::Up));
+        assert!(matches!(app.mode, Mode::Help { scroll: 24 }));
+        app.on_terminal(key(KeyCode::PageUp));
+        app.on_terminal(key(KeyCode::PageUp));
+        app.on_terminal(key(KeyCode::PageUp));
+        assert!(matches!(app.mode, Mode::Help { scroll: 0 }));
+        assert_eq!(app.state.log_scroll, 0);
+    }
+
+    #[test]
+    fn help_is_ignored_in_incognito_and_ctrl_c_quits_from_help() {
+        let mut app = App::for_test(Status::Online);
+        app.incognito = true;
+        app.on_terminal(key(KeyCode::F(1)));
+        assert!(matches!(app.mode, Mode::Play));
+        app.incognito = false;
+        app.on_terminal(key(KeyCode::F(1)));
+        app.on_terminal(Event::Key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)));
+        assert!(app.quit);
     }
 
     #[test]

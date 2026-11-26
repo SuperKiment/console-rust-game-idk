@@ -1,19 +1,19 @@
 13
 | Lignes | Section |
 |---|---|
-| 18-34 | Modules |
-| 35-53 | Démarrage |
-| 54-68 | Boucle principale |
-| 69-90 | Connexion et reconnexion |
-| 91-106 | GameState |
-| 107-123 | Layouts |
-| 124-144 | Chaîne glyphes et couleurs |
-| 145-166 | Assistant de configuration |
-| 167-172 | Table BINDINGS |
-| 173-177 | Docs liées |
+| 18-35 | Modules |
+| 36-54 | Démarrage |
+| 55-71 | Boucle principale |
+| 72-93 | Connexion et reconnexion |
+| 94-109 | GameState |
+| 110-126 | Layouts |
+| 127-148 | Chaîne glyphes et couleurs |
+| 149-170 | Assistant de configuration |
+| 171-176 | Table BINDINGS |
+| 177-181 | Docs liées |
 # Client : architecture
 
-> Vérifié le 2026-11-25 depuis `crates/client/src/` (`main.rs`, `app.rs`, `net.rs`, `state.rs`, `input.rs`, `config.rs`, `setup.rs`, `ui/`). Fiche : [vue-ensemble.md](vue-ensemble.md).
+> Vérifié le 2026-11-26 depuis `crates/client/src/` (`main.rs`, `app.rs`, `net.rs`, `state.rs`, `input.rs`, `config.rs`, `setup.rs`, `ui/`). Fiche : [vue-ensemble.md](vue-ensemble.md).
 
 ## Modules
 
@@ -22,12 +22,13 @@
 | `src/main.rs` | arguments `clap`, chargement de la config, assistant ou jeu |
 | `src/setup.rs` | assistant de configuration (machine d'états `Wizard`, boucle `run`) |
 | `src/config.rs` | `Config` (TOML), `GlyphSet`, `ColorDepth`, chemin du fichier |
-| `src/app.rs` | `App`, boucle `tokio::select`, modes `Play` / `Chat`, statut de connexion |
+| `src/app.rs` | `App`, boucle `tokio::select`, modes `Play` / `Chat` / `Help`, statut de connexion |
 | `src/net.rs` | tâche de connexion avec reconnexion automatique |
 | `src/state.rs` | `GameState` : ce que le client sait du monde |
 | `src/input.rs` | table `BINDINGS`, `action_for`, `push_pasted`, `pop_grapheme` |
 | `src/ui/mod.rs` | `draw` : choisit le layout normal ou incognito |
 | `src/ui/game.rs`, `incognito.rs` | les deux layouts |
+| `src/ui/help.rs` | popup d'aide (F1) dessiné par-dessus le layout normal |
 | `src/ui/map.rs` | rendu de la carte, partagé par les layouts |
 | `src/ui/glyphs.rs`, `theme.rs` | choix des symboles et couleurs ; thèmes `NORMAL` et `INCOGNITO` |
 | `src/ui/setup.rs` | dessin de l'assistant |
@@ -64,7 +65,9 @@ Nom par défaut (`config::default_name`) : `$USER` s'il est non vide, sinon `pla
 
 Aucune simulation côté client : l'écran n'est que le reflet du dernier état reçu. Les actions ne sont envoyées que si `Status::Online`.
 
-Modes de saisie : `Mode::Play` (touches via `BINDINGS`) et `Mode::Chat(String)` (Entrée envoie, Échap annule, 240 caractères max ; Ctrl/Alt/Super + touche ignorés sauf Ctrl+C qui quitte ; un collage devient une ligne unique, retours à la ligne remplacés par des espaces, jamais envoyée toute seule ; ↑/↓ parcourent l'historique des messages réellement envoyés pendant la session, `chat_history` (50 max, doublon consécutif ignoré, non persisté) : le 1er ↑ sauvegarde le tampon dans `chat_draft`, ↓ au-delà du dernier le restaure, `Action::Chat` remet `history_pos` à `None`). Esc en jeu (`ConfirmQuit`) : le premier Esc journalise « Press Esc again to quit. », un second Esc dans les 2 s (`QUIT_CONFIRM`) quitte, toute autre touche entre les deux désarme la confirmation (`quit_armed = None`) ; statut `Rejected` : un seul Esc quitte (l'événement `Rejected` écrit « Rejected: <raison> » au journal et vide l'état de jeu comme une déconnexion). Anti-autorepeat : sans protocole clavier kitty, un Esc maintenu arrive en `Press` répétés. `Repeat` et tout Esc reçu moins de 150 ms (`ESC_REPEAT`) après le précédent Esc sont ignorés (en jeu comme en chat, donc le Esc qui ferme le chat n'arme rien) ; ils repoussent l'horodatage (`last_esc`, et `quit_armed` s'il est armé) : une rafale continue ne quitte jamais, le second Esc valide doit venir entre 150 ms et 2 s après le dernier Esc. Ctrl+C quitte tout de suite.
+Modes de saisie : `Mode::Play` (touches via `BINDINGS`), `Mode::Help { scroll: u16 }` (écran d'aide, voir ci-dessous) et `Mode::Chat(String)` (Entrée envoie, Échap annule, 240 caractères max ; Ctrl/Alt/Super + touche ignorés sauf Ctrl+C qui quitte ; un collage devient une ligne unique, retours à la ligne remplacés par des espaces, jamais envoyée toute seule ; ↑/↓ parcourent l'historique des messages réellement envoyés pendant la session, `chat_history` (50 max, doublon consécutif ignoré, non persisté) : le 1er ↑ sauvegarde le tampon dans `chat_draft`, ↓ au-delà du dernier le restaure, `Action::Chat` remet `history_pos` à `None`). Esc en jeu (`ConfirmQuit`) : le premier Esc journalise « Press Esc again to quit. », un second Esc dans les 2 s (`QUIT_CONFIRM`) quitte, toute autre touche entre les deux désarme la confirmation (`quit_armed = None`) ; statut `Rejected` : un seul Esc quitte (l'événement `Rejected` écrit « Rejected: <raison> » au journal et vide l'état de jeu comme une déconnexion). Anti-autorepeat : sans protocole clavier kitty, un Esc maintenu arrive en `Press` répétés. `Repeat` et tout Esc reçu moins de 150 ms (`ESC_REPEAT`) après le précédent Esc sont ignorés (en jeu comme en chat, donc le Esc qui ferme le chat n'arme rien) ; ils repoussent l'horodatage (`last_esc`, et `quit_armed` s'il est armé) : une rafale continue ne quitte jamais, le second Esc valide doit venir entre 150 ms et 2 s après le dernier Esc. Ctrl+C quitte tout de suite.
+
+Écran d'aide : F1 (`Action::Help`) en `Mode::Play` ouvre `Mode::Help { scroll: 0 }` ; sans effet en incognito (`act` ignore l'action : aucun popup de jeu dans le faux éditeur, donc `Help` n'existe jamais avec `incognito` actif). En aide : Esc ou F1 referment (retour en `Play`, Esc n'arme pas `quit_armed` ni ne journalise « Press Esc again » ; le filtre d'autorepeat `last_esc` s'applique avant, donc un Esc maintenu ne quitte pas non plus), ↑/↓ défilent d'une ligne, PgUp/PgDn de `HELP_PAGE` (10) lignes (ils ne touchent pas `log_scroll`), toute autre touche est ignorée (F2 compris). Ctrl+C quitte comme en chat (les autres Ctrl/Alt/Super + touche sont ignorés). Borne du défilement : la hauteur visible n'est connue qu'au rendu, `ui::help::draw` écrit donc `App.help_max_scroll` (`Cell<u16>` = lignes de contenu moins hauteur du corps) et `on_terminal_at` y borne `scroll` ; le rendu applique aussi `min` (terminal redimensionné entre deux images).
 
 ## Connexion et reconnexion
 
@@ -106,7 +109,7 @@ stateDiagram-v2
 
 ## Layouts
 
-`ui::draw` choisit selon `App.incognito`, basculable à chaud par F2 (action `ToggleIncognito`), sans toucher à la connexion. F2 reste actif en saisie de chat (`App::on_terminal` le traite avant le `match` sur le mode, le texte saisi est conservé).
+`ui::draw` choisit selon `App.incognito`, basculable à chaud par F2 (action `ToggleIncognito`), sans toucher à la connexion. En `Mode::Help`, `ui::draw` dessine d'abord `game::draw` puis `help::draw` par-dessus (`Clear`). F2 reste actif en saisie de chat (`App::on_terminal` le traite avant le `match` sur le mode, le texte saisi est conservé).
 
 | | Normal (`ui/game.rs`) | Incognito (`ui/incognito.rs`) |
 |---|---|---|
@@ -115,7 +118,7 @@ stateDiagram-v2
 | Journal | heure locale `HH:MM:SS`, texte coloré par type, retour à la ligne des longs messages, saisie du chat défilée (fin du texte visible) | format de logs serveur : `ISO8601 NIVEAU message`, retour à la ligne des longs messages et défilement pour garder le bas visible (`game::render_tail`, partagé avec le layout normal), ISO8601 en heure locale avec fuseau (`Z` ou `±HH:MM`) ; `Animal` = DEBUG, départs (« left the world. ») et déconnexions (« Disconnected… ») = WARN, le reste INFO ; chat préfixé `[chat] <nom>` |
 | Barre d'état | popup centrée si non connecté | `NORMAL` / `INSERT` façon vim, `Ln y, Col x`, chat saisi comme ligne de commande `:`, `N users` et heure locale `HH:MM` à droite ; l'état de connexion s'affiche dans la barre (pas de popup) |
 | Indicateur de défilement | titre du bloc `log` suffixé de ` ↓N` (` vN` en ASCII) quand `log_scroll` = N > 0 | en-tête ` OUTPUT (N more)` |
-| Aide des touches | panneau `keys`, généré depuis `BINDINGS` | aucune |
+| Aide des touches | panneau `keys`, généré depuis `BINDINGS` ; F1 ouvre l'écran d'aide complet (`ui/help.rs`) | aucune |
 
 Fuseau : `state::utc_offset` (via `chrono`, lu une fois ; en docker, `/etc/localtime` est monté par `docker-compose.yml`). Le jeu de glyphes de la config ne change que les symboles du chrome (voir « Chaîne glyphes et couleurs »).
 
@@ -138,7 +141,8 @@ flowchart LR
 - `ColorDepth::Ansi256` approche chaque `Rgb` de la palette xterm (cube 6x6x6 ou rampe de gris).
 - Les murs (`def.connects`) choisissent un trait de boîte selon leurs voisins identiques (`wall_mask` : 1 nord, 2 est, 4 sud, 8 ouest) ; en `Wide`, une seconde cellule prolonge le trait vers l'est.
 - Priorité d'affichage d'une cellule : effet, puis entité, puis tuile. La tuile visée est éclaircie (normal) ou soulignée (incognito).
-- Chrome en jeu de glyphes `Ascii` (`ui::bordered`, `ui::pick`) : bordures `+-|`, spinner `| / - \`, curseur de saisie `_`, `...`, `<3`, séparateurs `-`/`|`, `arrows` à la place des flèches dans l'aide ; sinon bordures arrondies, spinner braille, `█`, `…`, `♥`, `·`.
+- Écran d'aide (`ui/help.rs`, `draw(f, app)`) : popup centré, marges de 2 (`Rect::inner` renvoie un rectangle vide si le terminal est trop petit, pas de panique), bordure `ui::bordered`, titre ` help — esc to close ` (`-` en ASCII). Contenu généré par `lines` : section `keys` (une ligne par `Binding` de `BINDINGS`, toutes les touches y compris les variantes sans `help`, via `key_name` ; libellé via `action_label`, `→` remplacé par `->` en ASCII ; ligne `ctrl-c` ajoutée à la main car absente de `BINDINGS`), section `tiles` (`Tile::ALL`), section `animals` (`Species::ALL` puis `PLAYER_GLYPH`) : glyphe du `GlyphSet` courant en couleur `fg`, colonne de 3 cellules, puis le `name`.
+- Chrome en jeu de glyphes `Ascii` (`ui::bordered`, `ui::pick`) : bordures `+-|`, spinner `| / - \`, curseur de saisie `_`, `...`, `<3`, séparateurs `-`/`|`, `arrows` à la place des flèches dans le panneau `keys`, `up`/`down`/`left`/`right` et `->` dans l'écran d'aide ; sinon bordures arrondies, spinner braille, `█`, `…`, `♥`, `·`.
 - Hors ligne : la carte est dessinée avec couleurs divisées par 2 et `DIM` (`map::render`).
 - Fond : `bg` de la tuile, sinon `bg` du biome, sinon `theme.unknown` ; chunk inconnu = fond `unknown`.
 
@@ -168,7 +172,7 @@ flowchart TD
 
 `crates/client/src/input.rs` : tableau de `Binding { keys, action, help }`. `action_for` met la lettre en minuscule, traite Ctrl+C comme `Quit`, puis cherche la première ligne qui contient la touche. Le champ `help` génère le panneau `keys` : une ligne sans `help` est une variante d'une ligne affichée. Un test vérifie qu'aucune touche n'est liée deux fois. La saisie de texte (chat, assistant) retire au Backspace un graphème entier (`pop_grapheme`), et `ui::tail_fit` mesure la largeur par graphème (comme ratatui) : `❤️` = 2 colonnes, pas `❤` + U+FE0F. Les plafonds (`MAX_CHAT`, `max`) restent comptés en `chars()`, comme côté serveur.
 
-PgUp / PgDn / End (`LogUp`, `LogDown`, `LogEnd`) défilent le journal de `LOG_PAGE` (5) entrées, ou reviennent en bas ; actifs en `Mode::Play` seulement (en chat, ignorés). PgDn et End sont des variantes sans `help`. Ajouter une touche : une ligne dans `BINDINGS`, une variante dans `Action`, un cas dans `App::act` (`crates/client/src/app.rs`). Exception : `ConfirmQuit` (Esc) est traité dans `on_terminal_at` avant `act` (son bras dans `act` ne sert qu'à l'exhaustivité du `match`). Les touches sont listées dans le [README](../../../../README.md), section « Contrôles ».
+PgUp / PgDn / End (`LogUp`, `LogDown`, `LogEnd`) défilent le journal de `LOG_PAGE` (5) entrées, ou reviennent en bas ; actifs en `Mode::Play` seulement (en chat, ignorés ; en `Mode::Help` ils défilent l'aide). PgDn et End sont des variantes sans `help`. Ajouter une touche : une ligne dans `BINDINGS`, une variante dans `Action`, un cas dans `App::act` (`crates/client/src/app.rs`). Exception : `ConfirmQuit` (Esc) est traité dans `on_terminal_at` avant `act` (son bras dans `act` ne sert qu'à l'exhaustivité du `match`). Les touches sont listées dans le [README](../../../../README.md), section « Contrôles ».
 
 ## Docs liées
 

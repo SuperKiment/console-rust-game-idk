@@ -202,7 +202,8 @@ fn draw_bar(f: &mut Frame, app: &App, area: Rect) {
 
     let middle = match &app.mode {
         Mode::Chat(text) => command_line(text, mid.width as usize),
-        Mode::Play => match notice(app) {
+        // `Mode::Help` n'existe pas en incognito (F1 ignoré) ; traité comme `Play` par exhaustivité.
+        Mode::Play | Mode::Help { .. } => match notice(app) {
             Some(n) => format!(" {n}"),
             None => app.state.my_pos().map(|p| format!(" Ln {}, Col {}", p.y, p.x)).unwrap_or_default(),
         },

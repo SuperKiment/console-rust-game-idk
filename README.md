@@ -50,6 +50,7 @@ Options client : `--server`, `--name`, `--incognito`, `--configure` (env `IDK_SE
 | `x` | casser |
 | `t`, entrée | chat (entrée envoie, `esc` annule, `↑`/`↓` historique des messages envoyés) |
 | `PgUp`, `PgDn`, `fin` | remonter, redescendre le journal, revenir en bas |
+| `F1` | aide : toutes les touches et la légende des glyphes (`F1` ou `esc` referme, `↑`/`↓`/`PgUp`/`PgDn` défilent ; sans effet en incognito) |
 | `F2` | basculer le mode incognito |
 | `esc` deux fois de suite (entre 0,15 et 2 s d'écart, toute autre touche annule ; esc maintenu ne quitte pas), `ctrl-c` | quitter (`ctrl-c` directement) |
 

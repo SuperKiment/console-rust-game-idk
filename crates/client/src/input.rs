@@ -12,6 +12,8 @@ pub enum Action {
     Break,
     Chat,
     ToggleIncognito,
+    /// F1 : ouvre l'écran d'aide (touches et légende des glyphes).
+    Help,
     /// PgUp : remonte le journal.
     LogUp,
     /// PgDn : redescend le journal.
@@ -54,6 +56,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding { keys: &[Char('b')], action: Action::Build, help: Some(("b", "build wall")) },
     Binding { keys: &[Char('x')], action: Action::Break, help: Some(("x", "break")) },
     Binding { keys: &[Enter, Char('t')], action: Action::Chat, help: Some(("t enter", "chat")) },
+    Binding { keys: &[F(1)], action: Action::Help, help: Some(("F1", "help")) },
     Binding { keys: &[F(2)], action: Action::ToggleIncognito, help: Some(("F2", "incognito")) },
     Binding { keys: &[PageUp], action: Action::LogUp, help: Some(("pgup pgdn", "scroll log")) },
     Binding { keys: &[PageDown], action: Action::LogDown, help: None },
@@ -132,6 +135,11 @@ mod tests {
         assert_eq!(action_for(key(KeyCode::PageUp)), Some(Action::LogUp));
         assert_eq!(action_for(key(KeyCode::PageDown)), Some(Action::LogDown));
         assert_eq!(action_for(key(KeyCode::End)), Some(Action::LogEnd));
+    }
+
+    #[test]
+    fn f1_opens_help() {
+        assert_eq!(action_for(KeyEvent::new(F(1), KeyModifiers::NONE)), Some(Action::Help));
     }
 
     #[test]
