@@ -4,7 +4,7 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant, SystemTime};
 
-use idk_shared::content::{Biome, Effect, Tile};
+use idk_shared::content::{Biome, Effect, Item, Tile};
 use idk_shared::geo::{ChunkPos, Dir, Pos};
 use idk_shared::protocol::{ChunkData, EntityId, EntityView, KEEP_CHUNKS, LogKind, LogLine, ServerMsg};
 
@@ -46,6 +46,8 @@ pub struct GameState {
     chunks: HashMap<ChunkPos, ChunkData>,
     pub entities: Vec<EntityView>,
     pub online: Vec<(String, u8)>,
+    /// Sac du joueur, vide jusqu'au premier `Inventory` après le Welcome.
+    pub inventory: Vec<(Item, u16)>,
     pub log: VecDeque<LogEntry>,
     /// Entrées du journal cachées sous la vue (0 = collé en bas).
     pub log_scroll: usize,
@@ -84,6 +86,7 @@ impl GameState {
                 self.effects.push((pos, effect, until));
             }
             ServerMsg::Online(list) => self.online = list,
+            ServerMsg::Inventory(inv) => self.inventory = inv,
             // Inatteignable : `net::session` intercepte `Rejected` avant l'état.
             ServerMsg::Rejected(_) => {}
         }
@@ -186,6 +189,16 @@ impl GameState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn inventory_message_fills_state() {
+        let now = Instant::now();
+        let mut s = GameState::default();
+        s.apply(ServerMsg::Inventory(vec![(Item::Wood, 2)]), now);
+        assert_eq!(s.inventory, vec![(Item::Wood, 2)]);
+        s.apply(ServerMsg::Welcome { id: 1, name: "a".into(), seed: 0 }, now);
+        assert!(s.inventory.is_empty(), "reset au Welcome");
+    }
 
     #[test]
     fn chat_color_is_kept_after_author_leaves() {

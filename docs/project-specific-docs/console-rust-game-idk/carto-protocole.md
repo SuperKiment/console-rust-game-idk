@@ -2,13 +2,13 @@
 | Lignes | Section |
 |---|---|
 | 18-21 | Framing |
-| 22-45 | Messages |
-| 46-72 | Séquence de connexion |
-| 73-81 | Règles du serveur à l'accueil |
-| 82-93 | Keepalive et timeouts |
-| 94-97 | Côté client |
-| 98-107 | Versionnement |
-| 108-110 | Points non vérifiés |
+| 22-46 | Messages |
+| 47-74 | Séquence de connexion |
+| 75-83 | Règles du serveur à l'accueil |
+| 84-95 | Keepalive et timeouts |
+| 96-99 | Côté client |
+| 100-109 | Versionnement |
+| 110-112 | Points non vérifiés |
 # Protocole client-serveur
 
 > Vérifié le 2026-11-25 depuis `crates/shared/src/protocol.rs`, `crates/shared/src/net.rs`, `crates/server/src/net.rs`, `crates/server/src/game.rs`, `crates/client/src/net.rs`, `crates/client/src/state.rs`.
@@ -42,6 +42,7 @@ Définis dans `crates/shared/src/protocol.rs`.
 | `Effect { pos, effect }` | effet visuel éphémère |
 | `Online(Vec<(String, u8)>)` | joueurs connectés `(nom, couleur)`, à chaque arrivée et départ |
 | `Rejected(String)` | refus (versions différentes, handshake invalide `bad handshake, update your client`, ou session remplacée : `name <nom> used by a new connection`) ; le serveur ferme ensuite le socket |
+| `Inventory(Vec<(Item, u16)>)` | inventaire complet du joueur, envoyé juste après `Welcome` (y compris session remplacée) et à chaque changement (objet ajouté ; rien si la pile est pleine) |
 
 ## Séquence de connexion
 
@@ -57,6 +58,7 @@ sequenceDiagram
     else version identique
         N->>G: Event::Join
         G-->>C: Welcome { id, name, seed }
+        G-->>C: Inventory
         G-->>C: Log "joined" (ou "reconnected") puis Online
         G-->>C: Chunk x N (rayon de 3 chunks)
         loop chaque tick, 20 Hz
@@ -98,7 +100,7 @@ File d'envoi serveur par client : `mpsc::channel(SEND_QUEUE)` = 256 messages. En
 ## Versionnement
 
 > [!WARNING]
-> Tout changement incompatible de `ClientMsg`, `ServerMsg` ou de leurs types imbriqués incrémente `PROTOCOL_VERSION` (actuellement 2). Postcard n'a pas de champs nommés : l'ordre des variantes et des champs est le format.
+> Tout changement incompatible de `ClientMsg`, `ServerMsg` ou de leurs types imbriqués incrémente `PROTOCOL_VERSION` (actuellement 3). Postcard n'a pas de champs nommés : l'ordre des variantes et des champs est le format.
 
 - Ajouter une variante de message : à la **fin** de l'enum, puis incrémenter la version.
 - Contenu (`Tile`, `Biome`, `Species`, `Effect`) : ces enums transitent aussi sur le réseau (`ChunkData`, `Look`, `Effect`) et dans la sauvegarde. Ajouter les lignes en **fin de table**, jamais en milieu ni en suppression. Voir [guide-ajout-contenu.md](guide-ajout-contenu.md).
