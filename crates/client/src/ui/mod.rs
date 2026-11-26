@@ -2,6 +2,7 @@
 
 mod game;
 pub mod glyphs;
+mod help;
 mod incognito;
 pub mod map;
 pub mod setup;
@@ -13,7 +14,7 @@ use ratatui::text::Line;
 use ratatui::widgets::{Block, BorderType};
 use unicode_segmentation::UnicodeSegmentation;
 
-use crate::app::App;
+use crate::app::{App, Mode};
 use crate::config::GlyphSet;
 
 pub const ASCII_BORDER: border::Set = border::Set {
@@ -47,6 +48,9 @@ pub fn draw(f: &mut Frame, app: &App) {
         incognito::draw(f, app);
     } else {
         game::draw(f, app);
+        if matches!(app.mode, Mode::Help { .. }) {
+            help::draw(f, app);
+        }
     }
 }
 
