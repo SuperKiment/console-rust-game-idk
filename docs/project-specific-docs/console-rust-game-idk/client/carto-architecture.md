@@ -5,12 +5,12 @@
 | 35-53 | Démarrage |
 | 54-68 | Boucle principale |
 | 69-90 | Connexion et reconnexion |
-| 91-105 | GameState |
-| 106-121 | Layouts |
-| 122-142 | Chaîne glyphes et couleurs |
-| 143-164 | Assistant de configuration |
-| 165-170 | Table BINDINGS |
-| 171-175 | Docs liées |
+| 91-106 | GameState |
+| 107-123 | Layouts |
+| 124-144 | Chaîne glyphes et couleurs |
+| 145-166 | Assistant de configuration |
+| 167-172 | Table BINDINGS |
+| 173-177 | Docs liées |
 # Client : architecture
 
 > Vérifié le 2026-11-25 depuis `crates/client/src/` (`main.rs`, `app.rs`, `net.rs`, `state.rs`, `input.rs`, `config.rs`, `setup.rs`, `ui/`). Fiche : [vue-ensemble.md](vue-ensemble.md).
@@ -99,9 +99,10 @@ stateDiagram-v2
 | `entities` | `Entities` (remplacement complet à chaque tick) |
 | `online` | `Online` |
 | `log` | `Log` et lignes locales ; 200 entrées max (`LOG_SIZE`), horodatées à la réception |
+| `log_scroll` | PgUp / PgDn / End : nombre d'entrées cachées sous la vue (0 = en bas), conservé au `Welcome` comme `log` |
 | `effects` | `Effect`, expiration selon `duration_ms` de l'effet |
 
-`KEEP_CHUNKS` est partagé avec le serveur (voir [server/carto-architecture.md](../server/carto-architecture.md), section « Streaming de chunks ») : client et serveur oublient un chunk à la même distance. Lors du dessin, un joueur passe devant un animal sur la même tuile (`entity_at`).
+`KEEP_CHUNKS` est partagé avec le serveur (voir [server/carto-architecture.md](../server/carto-architecture.md), section « Streaming de chunks ») : client et serveur oublient un chunk à la même distance. `push_log` incrémente `log_scroll` quand il est > 0 (la vue ne bouge pas à l'arrivée d'un message) puis le borne à `log.len() - 1` ; quand le journal est plein, l'entrée retirée est la plus ancienne, donc jamais sous la vue : rien d'autre à ajuster. `visible_log(rows)` renvoie les `rows` entrées qui finissent `log_scroll` entrées avant la fin (les deux `draw_log` l'utilisent). Le défilement se fait par entrée, pas par ligne repliée. Lors du dessin, un joueur passe devant un animal sur la même tuile (`entity_at`).
 
 ## Layouts
 
@@ -113,6 +114,7 @@ stateDiagram-v2
 | Cadre | panneaux `you`, `online`, `nearby`, `keys`, journal (au plus 9 lignes de haut, bordures comprises, réduit à un quart de la hauteur du terminal avec un minimum de 4 ; sidebar masquée si le terminal fait moins de 52 colonnes (20 de carte + 32), la carte prend alors toute la largeur ; sidebar : `you` en priorité, puis `keys` entier ou masqué, puis `online` et `nearby` selon la place restante ; la graine s’affiche en hex court dans le titre de la carte seulement si la carte fait 40 colonnes ou plus et si un `Welcome` a été reçu, donc jamais avant la 1re connexion) | barre d'onglets (`<biome>.rs` avec les espaces du nom remplacés par `_`, ex. `deep_lake.rs`, ou `main.rs` tant que le biome est inconnu ; puis `world.log`, `Cargo.toml`), gouttière de numéros de ligne = coordonnée y, panneau `OUTPUT` (8 lignes max en-tête compris, au plus un tiers de l'écran) |
 | Journal | heure locale `HH:MM:SS`, texte coloré par type, retour à la ligne des longs messages, saisie du chat défilée (fin du texte visible) | format de logs serveur : `ISO8601 NIVEAU message`, retour à la ligne des longs messages et défilement pour garder le bas visible (`game::render_tail`, partagé avec le layout normal), ISO8601 en heure locale avec fuseau (`Z` ou `±HH:MM`) ; `Animal` = DEBUG, départs (« left the world. ») et déconnexions (« Disconnected… ») = WARN, le reste INFO ; chat préfixé `[chat] <nom>` |
 | Barre d'état | popup centrée si non connecté | `NORMAL` / `INSERT` façon vim, `Ln y, Col x`, chat saisi comme ligne de commande `:`, `N users` et heure locale `HH:MM` à droite ; l'état de connexion s'affiche dans la barre (pas de popup) |
+| Indicateur de défilement | titre du bloc `log` suffixé de ` ↓N` (` vN` en ASCII) quand `log_scroll` = N > 0 | en-tête ` OUTPUT (N more)` |
 | Aide des touches | panneau `keys`, généré depuis `BINDINGS` | aucune |
 
 Fuseau : `state::utc_offset` (via `chrono`, lu une fois ; en docker, `/etc/localtime` est monté par `docker-compose.yml`). Le jeu de glyphes de la config ne change que les symboles du chrome (voir « Chaîne glyphes et couleurs »).
@@ -166,7 +168,7 @@ flowchart TD
 
 `crates/client/src/input.rs` : tableau de `Binding { keys, action, help }`. `action_for` met la lettre en minuscule, traite Ctrl+C comme `Quit`, puis cherche la première ligne qui contient la touche. Le champ `help` génère le panneau `keys` : une ligne sans `help` est une variante d'une ligne affichée. Un test vérifie qu'aucune touche n'est liée deux fois. La saisie de texte (chat, assistant) retire au Backspace un graphème entier (`pop_grapheme`), et `ui::tail_fit` mesure la largeur par graphème (comme ratatui) : `❤️` = 2 colonnes, pas `❤` + U+FE0F. Les plafonds (`MAX_CHAT`, `max`) restent comptés en `chars()`, comme côté serveur.
 
-Ajouter une touche : une ligne dans `BINDINGS`, une variante dans `Action`, un cas dans `App::act` (`crates/client/src/app.rs`). Exception : `ConfirmQuit` (Esc) est traité dans `on_terminal_at` avant `act` (son bras dans `act` ne sert qu'à l'exhaustivité du `match`). Les touches sont listées dans le [README](../../../../README.md), section « Contrôles ».
+PgUp / PgDn / End (`LogUp`, `LogDown`, `LogEnd`) défilent le journal de `LOG_PAGE` (5) entrées, ou reviennent en bas ; actifs en `Mode::Play` seulement (en chat, ignorés). PgDn et End sont des variantes sans `help`. Ajouter une touche : une ligne dans `BINDINGS`, une variante dans `Action`, un cas dans `App::act` (`crates/client/src/app.rs`). Exception : `ConfirmQuit` (Esc) est traité dans `on_terminal_at` avant `act` (son bras dans `act` ne sert qu'à l'exhaustivité du `match`). Les touches sont listées dans le [README](../../../../README.md), section « Contrôles ».
 
 ## Docs liées
 

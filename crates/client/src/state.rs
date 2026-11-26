@@ -47,6 +47,8 @@ pub struct GameState {
     pub entities: Vec<EntityView>,
     pub online: Vec<(String, u8)>,
     pub log: VecDeque<LogEntry>,
+    /// Entrées du journal cachées sous la vue (0 = collé en bas).
+    pub log_scroll: usize,
     effects: Vec<(Pos, Effect, Instant)>,
 }
 
@@ -59,6 +61,7 @@ impl GameState {
                     name,
                     seed,
                     log: std::mem::take(&mut self.log),
+                    log_scroll: self.log_scroll,
                     ..Default::default()
                 };
             }
@@ -115,9 +118,31 @@ impl GameState {
             _ => 0,
         };
         self.log.push_back(LogEntry { time: unix_now(), line, color });
+        // Vue remontée : la nouvelle entrée arrive sous la vue, on compense pour qu'elle ne bouge pas.
+        if self.log_scroll > 0 {
+            self.log_scroll += 1;
+        }
+        // Journal plein : l'entrée retirée est la plus ancienne, donc jamais sous la vue ;
+        // le nombre d'entrées cachées en dessous ne change pas. Seul le plafond peut jouer.
         if self.log.len() > LOG_SIZE {
             self.log.pop_front();
         }
+        self.log_scroll = self.log_scroll.min(self.log.len().saturating_sub(1));
+    }
+
+    /// Remonte (`up`) ou redescend le journal de `n` entrées, borné à `[0, len - 1]`.
+    pub fn scroll_log(&mut self, up: bool, n: usize) {
+        self.log_scroll = if up {
+            (self.log_scroll + n).min(self.log.len().saturating_sub(1))
+        } else {
+            self.log_scroll.saturating_sub(n)
+        };
+    }
+
+    /// Les `rows` entrées qui finissent `log_scroll` entrées avant la fin du journal.
+    pub fn visible_log(&self, rows: usize) -> impl Iterator<Item = &LogEntry> {
+        let end = self.log.len().saturating_sub(self.log_scroll);
+        self.log.range(end.saturating_sub(rows)..end)
     }
 
     pub fn me(&self) -> Option<&EntityView> {
@@ -272,5 +297,70 @@ mod tests {
         assert_eq!(s.log.len(), LOG_SIZE);
         assert_eq!(s.log.front().unwrap().line.text, "5");
         assert_eq!(s.log.back().unwrap().line.text, (LOG_SIZE + 4).to_string());
+    }
+
+    fn state_with_log(n: usize) -> GameState {
+        let mut s = GameState::default();
+        for i in 0..n {
+            s.push_log(LogLine::new(LogKind::Info, i.to_string()));
+        }
+        s
+    }
+
+    fn texts(s: &GameState, rows: usize) -> Vec<String> {
+        s.visible_log(rows).map(|e| e.line.text.clone()).collect()
+    }
+
+    #[test]
+    fn visible_log_bounds() {
+        let mut s = GameState::default();
+        assert!(texts(&s, 3).is_empty());
+        s = state_with_log(5);
+        assert_eq!(texts(&s, 3), ["2", "3", "4"]);
+        s.log_scroll = 2;
+        assert_eq!(texts(&s, 3), ["0", "1", "2"]);
+        s.log_scroll = 99; // hors bornes : vue vide, sans panique
+        assert!(texts(&s, 3).is_empty());
+        s.log_scroll = 0;
+        assert_eq!(texts(&s, 99).len(), 5);
+    }
+
+    #[test]
+    fn scroll_log_is_clamped() {
+        let mut s = state_with_log(8);
+        s.scroll_log(true, 5);
+        assert_eq!(s.log_scroll, 5);
+        s.scroll_log(true, 5);
+        assert_eq!(s.log_scroll, 7);
+        s.scroll_log(false, 5);
+        s.scroll_log(false, 5);
+        assert_eq!(s.log_scroll, 0);
+    }
+
+    #[test]
+    fn push_log_keeps_view_when_scrolled() {
+        let mut s = state_with_log(10);
+        s.scroll_log(true, 3);
+        let before = texts(&s, 4);
+        s.push_log(LogLine::new(LogKind::Info, "new"));
+        assert_eq!(s.log_scroll, 4);
+        assert_eq!(texts(&s, 4), before);
+        // en bas : on suit les nouveaux messages
+        s.log_scroll = 0;
+        s.push_log(LogLine::new(LogKind::Info, "newer"));
+        assert_eq!(s.log_scroll, 0);
+    }
+
+    #[test]
+    fn push_log_keeps_view_when_log_is_full() {
+        let mut s = state_with_log(LOG_SIZE);
+        s.scroll_log(true, 10);
+        let before = texts(&s, 4);
+        s.push_log(LogLine::new(LogKind::Info, "new"));
+        assert_eq!(texts(&s, 4), before);
+        // collé tout en haut : plafonné, sans dépasser len - 1
+        s.scroll_log(true, 10_000);
+        s.push_log(LogLine::new(LogKind::Info, "newer"));
+        assert_eq!(s.log_scroll, LOG_SIZE - 1);
     }
 }
