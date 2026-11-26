@@ -52,6 +52,17 @@ Options client : `--server`, `--name`, `--incognito`, `--configure` (env `IDK_SE
 | `F2` | basculer le mode incognito |
 | `esc` deux fois de suite (entre 0,15 et 2 s d'écart, toute autre touche annule ; esc maintenu ne quitte pas), `ctrl-c` | quitter (`ctrl-c` directement) |
 
+## Commandes de chat
+
+Un message qui commence par `/` est une commande (réponse visible par toi seul, sauf `/me` et `/msg`) :
+
+| Commande | Effet |
+|---|---|
+| `/help` | liste les commandes |
+| `/who` | joueurs en ligne, distance et direction (N, NE, E…) |
+| `/me <action>` | action visible de tous : `* alice <action>` |
+| `/msg <nom> <texte>` | message privé (le nom peut contenir des espaces) |
+
 ## Config client
 
 Au premier lancement, un assistant pose quelques questions (symboles Unicode et emoji, couleurs, nom, serveur, incognito) et écrit le fichier de config. `--configure` le relance à tout moment (`docker compose run --rm client --configure` en docker) ; Échap quitte sans rien sauvegarder.
