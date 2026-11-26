@@ -16,6 +16,8 @@ use crate::state::GameState;
 const FRAME: Duration = Duration::from_millis(33);
 /// Entrées du journal sautées par PgUp / PgDn.
 const LOG_PAGE: usize = 5;
+/// Taille max de l'historique des messages envoyés (le plus ancien est retiré).
+const CHAT_HISTORY: usize = 50;
 const NOT_CONNECTED: &str = "Not connected.";
 /// Délai max entre deux Esc pour confirmer la sortie.
 const QUIT_CONFIRM: Duration = Duration::from_secs(2);
@@ -50,6 +52,12 @@ pub struct App {
     quit_armed: Option<Instant>,
     /// Instant du dernier Esc reçu (toutes modes), pour filtrer l'autorepeat.
     last_esc: Option<Instant>,
+    /// Messages de chat envoyés pendant la session (le plus récent en dernier).
+    chat_history: Vec<String>,
+    /// Position dans `chat_history` pendant la navigation ↑/↓ ; `None` = tampon en cours.
+    history_pos: Option<usize>,
+    /// Tampon en cours de saisie, sauvegardé au premier ↑ et restauré en sortant par ↓.
+    chat_draft: String,
 }
 
 impl App {
@@ -68,6 +76,9 @@ impl App {
             quit: false,
             quit_armed: None,
             last_esc: None,
+            chat_history: Vec::new(),
+            history_pos: None,
+            chat_draft: String::new(),
         }
     }
 }
@@ -88,6 +99,9 @@ pub async fn run(terminal: &mut DefaultTerminal, config: Config) -> std::io::Res
         quit: false,
         quit_armed: None,
         last_esc: None,
+        chat_history: Vec::new(),
+        history_pos: None,
+        chat_draft: String::new(),
     };
     let mut input = EventStream::new();
     let mut frame = tokio::time::interval(FRAME);
@@ -204,11 +218,37 @@ impl App {
                 KeyCode::Enter => {
                     let msg = std::mem::take(text);
                     if !msg.trim().is_empty() {
+                        if self.chat_history.last() != Some(&msg) {
+                            self.chat_history.push(msg.clone());
+                            if self.chat_history.len() > CHAT_HISTORY {
+                                self.chat_history.remove(0);
+                            }
+                        }
+                        self.history_pos = None;
                         self.send(ClientMsg::Chat(msg));
                     }
                     self.mode = Mode::Play;
                 }
                 KeyCode::Esc => self.mode = Mode::Play,
+                KeyCode::Up if !self.chat_history.is_empty() => {
+                    let i = match self.history_pos {
+                        None => {
+                            self.chat_draft = text.clone();
+                            self.chat_history.len() - 1
+                        }
+                        Some(i) => i.saturating_sub(1),
+                    };
+                    self.history_pos = Some(i);
+                    *text = self.chat_history[i].clone();
+                }
+                KeyCode::Down if self.history_pos.is_some() => {
+                    let next = self.history_pos.map(|i| i + 1).filter(|&i| i < self.chat_history.len());
+                    self.history_pos = next;
+                    *text = match next {
+                        Some(i) => self.chat_history[i].clone(),
+                        None => std::mem::take(&mut self.chat_draft),
+                    };
+                }
                 KeyCode::Backspace => {
                     crate::input::pop_grapheme(text);
                 }
@@ -244,7 +284,10 @@ impl App {
             Action::Chat if !matches!(self.status, Status::Online) => {
                 self.state.push_log(LogLine::new(LogKind::System, NOT_CONNECTED));
             }
-            Action::Chat => self.mode = Mode::Chat(String::new()),
+            Action::Chat => {
+                self.history_pos = None;
+                self.mode = Mode::Chat(String::new());
+            }
             Action::ToggleIncognito => self.incognito = !self.incognito,
             Action::LogUp => self.state.scroll_log(true, LOG_PAGE),
             Action::LogDown => self.state.scroll_log(false, LOG_PAGE),
@@ -308,6 +351,62 @@ mod tests {
     fn chat_text(app: &App) -> &str {
         let Mode::Chat(t) = &app.mode else { panic!("not in chat") };
         t
+    }
+
+    fn press(app: &mut App, code: KeyCode) {
+        app.on_terminal(Event::Key(KeyEvent::new(code, KeyModifiers::NONE)));
+    }
+
+    /// Envoie `msg` : ouvre le chat, tape le texte, Entrée.
+    fn send_chat(app: &mut App, msg: &str) {
+        app.act(Action::Chat);
+        for c in msg.chars() {
+            press(app, KeyCode::Char(c));
+        }
+        press(app, KeyCode::Enter);
+    }
+
+    #[test]
+    fn chat_history_up_walks_back_and_down_restores_draft() {
+        let mut app = App::for_test(Status::Online);
+        send_chat(&mut app, "one");
+        send_chat(&mut app, "two");
+        app.act(Action::Chat);
+        press(&mut app, KeyCode::Char('x'));
+        press(&mut app, KeyCode::Up);
+        assert_eq!(chat_text(&app), "two");
+        press(&mut app, KeyCode::Up);
+        assert_eq!(chat_text(&app), "one");
+        press(&mut app, KeyCode::Up);
+        assert_eq!(chat_text(&app), "one");
+        press(&mut app, KeyCode::Down);
+        assert_eq!(chat_text(&app), "two");
+        press(&mut app, KeyCode::Down);
+        assert_eq!(chat_text(&app), "x");
+        press(&mut app, KeyCode::Down);
+        assert_eq!(chat_text(&app), "x");
+    }
+
+    #[test]
+    fn chat_history_skips_consecutive_duplicates_and_offline_sends() {
+        let mut app = App::for_test(Status::Online);
+        send_chat(&mut app, "a");
+        send_chat(&mut app, "a");
+        assert_eq!(app.chat_history, ["a"]);
+        app.status = Status::Offline("x".into());
+        app.mode = Mode::Chat("b".into());
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(app.chat_history, ["a"]);
+    }
+
+    #[test]
+    fn chat_history_is_capped() {
+        let mut app = App::for_test(Status::Online);
+        for i in 0..CHAT_HISTORY + 5 {
+            send_chat(&mut app, &i.to_string());
+        }
+        assert_eq!(app.chat_history.len(), CHAT_HISTORY);
+        assert_eq!(app.chat_history[0], "5");
     }
 
     #[test]
