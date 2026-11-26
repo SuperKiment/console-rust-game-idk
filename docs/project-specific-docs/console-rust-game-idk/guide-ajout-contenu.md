@@ -26,7 +26,7 @@ Nouvel animal : une ligne dans `SPECIES` (comportement composé avec les champs 
 
 Nouveau biome : une ligne dans `BIOMES`. Les biomes terrestres partagent la bande `LAND` ; dans une même bande, le biome au climat le plus proche gagne (`Biome::select`). Les bandes d'altitude doivent couvrir tout l'intervalle (test `elevation_bands_cover_range`).
 
-Nouvel objet : une ligne dans `ITEMS` (nom unique, glyphe, couleur), à la fin de la table. Pour qu'une tuile le donne quand on la casse, mettre `drops: Some(Item::X)` sur sa ligne de `TILES` : elle doit aussi avoir `breaks_into: Some(_)` (test `dropping_tiles_are_breakable`). Données seules pour l'instant : le serveur ne distribue pas encore les objets.
+Nouvel objet : une ligne dans `ITEMS` (nom unique, glyphe, couleur), à la fin de la table. Pour qu'une tuile le donne quand on la casse, mettre `drops: Some(Item::X)` sur sa ligne de `TILES` : elle doit aussi avoir `breaks_into: Some(_)` (test `dropping_tiles_are_breakable`). Le serveur donne l'objet au joueur qui casse la tuile (`Game::break_tile`, `add_item`) et lui envoie son inventaire (`ServerMsg::Inventory`).
 
 ## Tests de non-régression
 

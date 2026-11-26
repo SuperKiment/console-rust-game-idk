@@ -5,12 +5,12 @@
 | 36-54 | Démarrage |
 | 55-71 | Boucle principale |
 | 72-93 | Connexion et reconnexion |
-| 94-109 | GameState |
-| 110-126 | Layouts |
-| 127-148 | Chaîne glyphes et couleurs |
-| 149-170 | Assistant de configuration |
-| 171-176 | Table BINDINGS |
-| 177-181 | Docs liées |
+| 94-110 | GameState |
+| 111-127 | Layouts |
+| 128-149 | Chaîne glyphes et couleurs |
+| 150-171 | Assistant de configuration |
+| 172-177 | Table BINDINGS |
+| 178-182 | Docs liées |
 # Client : architecture
 
 > Vérifié le 2026-11-26 depuis `crates/client/src/` (`main.rs`, `app.rs`, `net.rs`, `state.rs`, `input.rs`, `config.rs`, `setup.rs`, `ui/`). Fiche : [vue-ensemble.md](vue-ensemble.md).
@@ -101,6 +101,7 @@ stateDiagram-v2
 | `chunks` (privé) | `Chunk` (ignoré si invalide), `TileChanged` ; purge au-delà de `KEEP_CHUNKS` (4, `crates/shared/src/protocol.rs`) chunks de la position du joueur |
 | `entities` | `Entities` (remplacement complet à chaque tick) |
 | `online` | `Online` |
+| `inventory` | `Inventory` (remplacement complet), vidé au `Welcome` ; pas encore affiché |
 | `log` | `Log` et lignes locales ; 200 entrées max (`LOG_SIZE`), horodatées à la réception |
 | `log_scroll` | PgUp / PgDn / End : nombre d'entrées cachées sous la vue (0 = en bas), conservé au `Welcome` comme `log` |
 | `effects` | `Effect`, expiration selon `duration_ms` de l'effet |
