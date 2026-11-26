@@ -9,7 +9,7 @@ use idk_shared::geo::{CHUNK_AREA, ChunkPos, Dir, Pos};
 use idk_shared::protocol::EntityId;
 use serde::{Deserialize, Serialize};
 
-use crate::game::Game;
+use crate::game::{Game, Inventory};
 use crate::world::World;
 
 /// Version courante du format. Ajouter une version (3 étapes) :
@@ -18,15 +18,47 @@ use crate::world::World;
 /// 3. ajouter dans [`decode`] le bras `N => v<N>::SaveData décodé puis converti en SaveData`.
 ///
 /// `version` doit rester le premier champ de `SaveData` : [`decode`] le lit seul en tête.
-pub const SAVE_VERSION: u32 = 1;
+pub const SAVE_VERSION: u32 = 2;
 const FILE: &str = "world.bin";
+
+/// Format de la version 1, figé : ne plus le modifier (sert uniquement à décoder les vieilles saves).
+mod v1 {
+    use super::*;
+
+    #[derive(Serialize, Deserialize)]
+    pub struct SaveData {
+        pub version: u32,
+        pub seed: u64,
+        pub next_id: EntityId,
+        pub players: Vec<(String, Pos, Dir)>,
+        pub chunks: Vec<(ChunkPos, Vec<Tile>)>,
+        pub spawned: Vec<ChunkPos>,
+        pub animals: Vec<(Species, Pos, Option<String>)>,
+    }
+}
+
+impl From<v1::SaveData> for SaveData {
+    /// Les joueurs de la v1 n'avaient pas d'inventaire : sacs vides.
+    fn from(old: v1::SaveData) -> Self {
+        SaveData {
+            version: SAVE_VERSION,
+            seed: old.seed,
+            next_id: old.next_id,
+            players: old.players.into_iter().map(|(n, p, d)| (n, p, d, Vec::new())).collect(),
+            chunks: old.chunks,
+            spawned: old.spawned,
+            animals: old.animals,
+        }
+    }
+}
 
 #[derive(Serialize, Deserialize)]
 pub struct SaveData {
     pub version: u32,
     pub seed: u64,
     pub next_id: EntityId,
-    pub players: Vec<(String, Pos, Dir)>,
+    /// `(nom, position, direction, inventaire)`.
+    pub players: Vec<(String, Pos, Dir, Inventory)>,
     pub chunks: Vec<(ChunkPos, Vec<Tile>)>,
     pub spawned: Vec<ChunkPos>,
     pub animals: Vec<(Species, Pos, Option<String>)>,
@@ -34,8 +66,8 @@ pub struct SaveData {
 
 impl Game {
     pub fn to_save(&self) -> SaveData {
-        let online = self.players.values().map(|p| (p.name.clone(), p.pos, p.facing));
-        let offline = self.offline.iter().map(|(n, (p, d))| (n.clone(), *p, *d));
+        let online = self.players.values().map(|p| (p.name.clone(), p.pos, p.facing, p.inventory.clone()));
+        let offline = self.offline.iter().map(|(n, (p, d, inv))| (n.clone(), *p, *d, inv.clone()));
         SaveData {
             version: SAVE_VERSION,
             seed: self.world.seed,
@@ -50,7 +82,7 @@ impl Game {
     pub fn from_save(s: SaveData, now: Instant) -> Game {
         let mut g = Game::new(World::restore(s.seed, s.chunks, s.spawned));
         g.next_id = s.next_id;
-        g.offline = s.players.into_iter().map(|(n, p, d)| (n, (p, d))).collect();
+        g.offline = s.players.into_iter().map(|(n, p, d, inv)| (n, (p, d, inv))).collect();
         for (species, pos, tamed_by) in s.animals {
             // Deux animaux sur la même tuile (vieille save) : le second est ignoré.
             if g.insert_animal(species, pos, tamed_by, now).is_none() {
@@ -75,14 +107,13 @@ pub fn read(dir: &Path) -> io::Result<Option<SaveData>> {
 /// dont la structure diffère n'échoue donc pas au décodage de la struct courante.
 fn decode(bytes: &[u8]) -> io::Result<SaveData> {
     let (version, _) = postcard::take_from_bytes::<u32>(bytes).map_err(io::Error::other)?;
-    match version {
-        SAVE_VERSION => {
-            let data: SaveData = postcard::from_bytes(bytes).map_err(io::Error::other)?;
-            validate(&data)?;
-            Ok(data)
-        }
-        v => Err(io::Error::other(format!("unsupported save version {v}"))),
-    }
+    let data = match version {
+        SAVE_VERSION => postcard::from_bytes::<SaveData>(bytes).map_err(io::Error::other)?,
+        1 => postcard::from_bytes::<v1::SaveData>(bytes).map_err(io::Error::other)?.into(),
+        v => return Err(io::Error::other(format!("unsupported save version {v}"))),
+    };
+    validate(&data)?;
+    Ok(data)
 }
 
 /// Refuse une save dont un chunk n'a pas `CHUNK_AREA` tuiles (sinon panic d'index au 1er accès).
@@ -114,13 +145,14 @@ pub fn write(dir: &Path, data: &SaveData) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use idk_shared::content::Item;
 
     fn sample() -> SaveData {
         SaveData {
             version: SAVE_VERSION,
             seed: 42,
             next_id: 7,
-            players: vec![("bob".into(), Pos::new(1, 2), Dir::North)],
+            players: vec![("bob".into(), Pos::new(1, 2), Dir::North, vec![(Item::Wood, 3)])],
             chunks: vec![],
             spawned: vec![],
             animals: vec![],
@@ -151,6 +183,50 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
         assert_eq!((back.version, back.seed, back.next_id), (SAVE_VERSION, 42, 7));
         assert_eq!(back.players.len(), 1);
+    }
+
+    #[test]
+    fn inventory_roundtrips_through_game() {
+        let now = Instant::now();
+        let mut data = sample();
+        data.players.push((
+            "carl".into(),
+            Pos::new(3, 3),
+            Dir::East,
+            vec![(Item::Stone, 9), (Item::Fiber, 1)],
+        ));
+        let g = Game::from_save(data, now);
+        assert_eq!(g.offline["bob"].2, vec![(Item::Wood, 3)]);
+        let back = g.to_save();
+        let mut players = back.players;
+        players.sort_by(|a, b| a.0.cmp(&b.0));
+        assert_eq!(players[0].3, vec![(Item::Wood, 3)]);
+        assert_eq!(players[1].3, vec![(Item::Stone, 9), (Item::Fiber, 1)]);
+    }
+
+    #[test]
+    fn v1_save_loads_with_empty_inventories() {
+        let old = v1::SaveData {
+            version: 1,
+            seed: 42,
+            next_id: 7,
+            players: vec![("bob".into(), Pos::new(1, 2), Dir::North)],
+            chunks: vec![(ChunkPos::new(0, 0), vec![Tile::Grass; CHUNK_AREA])],
+            spawned: vec![ChunkPos::new(0, 0)],
+            animals: vec![(Species::Cow, Pos::new(5, 5), None)],
+        };
+        let data = decode(&postcard::to_stdvec(&old).unwrap()).unwrap();
+        assert_eq!((data.version, data.seed, data.next_id), (SAVE_VERSION, 42, 7));
+        assert_eq!(data.players, vec![("bob".to_string(), Pos::new(1, 2), Dir::North, vec![])]);
+        assert_eq!((data.chunks.len(), data.spawned.len(), data.animals.len()), (1, 1, 1));
+    }
+
+    #[test]
+    fn version_3_is_rejected() {
+        let mut bytes = postcard::to_stdvec(&3u32).unwrap();
+        bytes.extend_from_slice(&[0, 0, 0]);
+        let err = decode(&bytes).err().unwrap();
+        assert_eq!(err.to_string(), "unsupported save version 3");
     }
 
     #[test]

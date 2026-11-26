@@ -5,7 +5,7 @@ use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
-use idk_shared::content::{Effect, Species, Tile, player_color_index};
+use idk_shared::content::{Effect, Item, Species, Tile, player_color_index};
 use idk_shared::geo::{CHUNK_SIZE, ChunkPos, Dir, Pos};
 use idk_shared::protocol::{
     ClientMsg, EntityId, EntityView, KEEP_CHUNKS, LogKind, LogLine, Look, MAX_CHAT, ServerMsg, VIEW_CHUNKS,
@@ -30,6 +30,27 @@ const MAX_SPAWN_SEARCH: i32 = 32;
 /// Rayon (tuiles) de recherche d'une place libre pour un animal prévu dont la tuile est prise.
 const SPAWN_SLIDE: i32 = 2;
 
+/// Taille maximale d'une pile d'objets. Au-delà, l'objet est perdu.
+pub const MAX_STACK: u16 = 999;
+
+/// Sac d'un joueur : une pile par objet, dans l'ordre d'obtention.
+pub type Inventory = Vec<(Item, u16)>;
+
+/// Ajoute 1 `item` au sac. `false` si sa pile est pleine (`MAX_STACK`) : l'objet est perdu.
+pub fn add_item(inv: &mut Inventory, item: Item) -> bool {
+    match inv.iter_mut().find(|(i, _)| *i == item) {
+        Some((_, n)) if *n >= MAX_STACK => false,
+        Some((_, n)) => {
+            *n += 1;
+            true
+        }
+        None => {
+            inv.push((item, 1));
+            true
+        }
+    }
+}
+
 /// What the network layer reports to the game.
 pub enum Event {
     Join { conn: ConnId, name: String, tx: Sender<ServerMsg> },
@@ -43,6 +64,7 @@ pub struct Player {
     pub color: u8,
     pub pos: Pos,
     pub facing: Dir,
+    pub inventory: Inventory,
     tx: Sender<ServerMsg>,
     /// Passe à vrai quand la file d'envoi est pleine ; `tick` déconnecte alors le joueur.
     overflow: Cell<bool>,
@@ -87,8 +109,8 @@ pub struct Game {
     animals: HashMap<EntityId, Animal>,
     /// Tuile -> animal qui l'occupe (au plus un par tuile). Rend [`Game::animal_at`] O(1).
     animal_index: HashMap<Pos, EntityId>,
-    /// Last known place of players who are not connected, by name.
-    pub offline: HashMap<String, (Pos, Dir)>,
+    /// Last known place and bag of players who are not connected, by name.
+    pub offline: HashMap<String, (Pos, Dir, Inventory)>,
     pub next_id: EntityId,
     pub rng: Rng,
 }
@@ -147,16 +169,18 @@ impl Game {
         // la nouvelle connexion remplace l'ancienne et reprend son identité, sa position et ses animaux.
         let old = self.conn_of(&name).and_then(|c| self.players.remove(&c));
         let replaced = old.is_some();
-        let (id, pos, facing) = match old {
+        let (id, pos, facing, inventory) = match old {
             Some(old) => {
                 // Un tx plein fait échouer l'envoi : l'ancienne connexion est fermée à la chute du tx.
                 old.send(ServerMsg::Rejected(format!("name {name} used by a new connection")));
-                (old.id, old.pos, old.facing)
+                (old.id, old.pos, old.facing, old.inventory)
             }
             None => {
-                let (pos, facing) =
-                    self.offline.remove(&name).unwrap_or_else(|| (self.world.spawn_point(), Dir::South));
-                (self.alloc_id(), pos, facing)
+                let (pos, facing, inventory) = self
+                    .offline
+                    .remove(&name)
+                    .unwrap_or_else(|| (self.world.spawn_point(), Dir::South, Inventory::new()));
+                (self.alloc_id(), pos, facing, inventory)
             }
         };
         // Le monde a pu changer depuis (mur posé sur la position ou sur le point d'apparition).
@@ -169,6 +193,7 @@ impl Game {
             color,
             pos,
             facing,
+            inventory,
             tx,
             overflow: Cell::new(false),
             sent: HashSet::new(),
@@ -209,7 +234,7 @@ impl Game {
         if let Some(p) = self.players.remove(&conn) {
             tracing::info!(name = %p.name, "player left");
             self.broadcast_log(LogKind::System, format!("{} left the world.", p.name));
-            self.offline.insert(p.name, (p.pos, p.facing));
+            self.offline.insert(p.name, (p.pos, p.facing, p.inventory));
             self.broadcast_online();
         }
     }
@@ -319,7 +344,18 @@ impl Game {
         match def.breaks_into {
             Some(into) => {
                 self.set_tile(target, into);
-                self.tell(conn, LogKind::Info, format!("You break the {}.", def.name));
+                let Some(item) = def.drops else {
+                    self.tell(conn, LogKind::Info, format!("You break the {}.", def.name));
+                    return;
+                };
+                let Some(player) = self.players.get_mut(&conn) else { return };
+                if add_item(&mut player.inventory, item) {
+                    let text = format!("You break the {} and get 1 {}.", def.name, item.def().name);
+                    self.tell(conn, LogKind::Info, text);
+                } else {
+                    self.tell(conn, LogKind::Info, format!("You break the {}.", def.name));
+                    self.tell(conn, LogKind::Info, format!("Your bag is full of {}.", item.def().name));
+                }
             }
             None => self.tell(conn, LogKind::Info, format!("Nothing to break here ({}).", def.name)),
         }
@@ -710,6 +746,84 @@ pub(crate) mod tests {
         assert_ne!(back, pos);
         assert!(g.world.tile(back).def().walkable);
         assert!((back.x - pos.x).abs() <= 1 && (back.y - pos.y).abs() <= 1);
+    }
+
+    /// Joue sur une prairie dégagée avec `tile` posée à l'est d'alice ; renvoie les messages reçus après `Break`.
+    fn break_east(g: &mut Game, rx: &mut Receiver<ServerMsg>, tile: Tile, now: Instant) -> Vec<String> {
+        let o = grass_field(g);
+        g.world.set_tile(Pos::new(o.x + 1, o.y), tile);
+        drain(rx);
+        g.event(Event::Msg(1, ClientMsg::Break(Dir::East)), now);
+        drain(rx)
+            .into_iter()
+            .filter_map(|m| match m {
+                ServerMsg::Log(l) => Some(l.text),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn breaking_a_tree_gives_wood() {
+        let now = Instant::now();
+        let mut g = Game::new(World::new(5));
+        let mut rx = join_rx(&mut g, 1, "alice", now);
+        g.clear_animals();
+        let logs = break_east(&mut g, &mut rx, Tile::Tree, now);
+        assert_eq!(g.players[&1].inventory, vec![(Item::Wood, 1)]);
+        assert_eq!(logs, vec!["You break the tree and get 1 wood.".to_string()]);
+    }
+
+    #[test]
+    fn breaking_without_drop_gives_nothing() {
+        let now = Instant::now();
+        let mut g = Game::new(World::new(5));
+        let mut rx = join_rx(&mut g, 1, "alice", now);
+        g.clear_animals();
+        let logs = break_east(&mut g, &mut rx, Tile::TallGrass, now);
+        assert!(g.players[&1].inventory.is_empty());
+        assert_eq!(logs, vec!["Nothing to break here (tall grass).".to_string()]);
+    }
+
+    #[test]
+    fn full_stack_loses_the_item() {
+        let mut inv: Inventory = vec![(Item::Stone, 5), (Item::Wood, MAX_STACK - 1)];
+        assert!(add_item(&mut inv, Item::Wood));
+        assert!(!add_item(&mut inv, Item::Wood));
+        assert_eq!(inv, vec![(Item::Stone, 5), (Item::Wood, MAX_STACK)]);
+
+        let now = Instant::now();
+        let mut g = Game::new(World::new(5));
+        let mut rx = join_rx(&mut g, 1, "alice", now);
+        g.clear_animals();
+        g.players.get_mut(&1).unwrap().inventory = vec![(Item::Wood, MAX_STACK)];
+        let logs = break_east(&mut g, &mut rx, Tile::Tree, now);
+        assert_eq!(g.players[&1].inventory, vec![(Item::Wood, MAX_STACK)]);
+        assert!(logs.contains(&"Your bag is full of wood.".to_string()), "{logs:?}");
+        assert_eq!(g.world.tile(Pos::new(g.players[&1].pos.x + 1, g.players[&1].pos.y)), Tile::Grass);
+    }
+
+    #[test]
+    fn inventory_survives_leave_and_join() {
+        let now = Instant::now();
+        let mut g = Game::new(World::new(5));
+        join(&mut g, 1, "alice", now);
+        g.players.get_mut(&1).unwrap().inventory = vec![(Item::Stone, 3), (Item::Wood, 2)];
+        g.event(Event::Leave(1), now);
+        assert!(g.players.is_empty());
+        join(&mut g, 2, "alice", now);
+        assert_eq!(g.players[&2].inventory, vec![(Item::Stone, 3), (Item::Wood, 2)]);
+        assert!(g.offline.is_empty());
+    }
+
+    #[test]
+    fn inventory_survives_session_replacement() {
+        let now = Instant::now();
+        let mut g = Game::new(World::new(5));
+        join(&mut g, 1, "alice", now);
+        g.players.get_mut(&1).unwrap().inventory = vec![(Item::Fiber, 4)];
+        join(&mut g, 2, "alice", now);
+        assert_eq!(g.players[&2].inventory, vec![(Item::Fiber, 4)]);
     }
 
     #[test]

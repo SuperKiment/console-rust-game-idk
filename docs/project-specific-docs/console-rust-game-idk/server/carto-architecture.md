@@ -4,15 +4,15 @@
 | 20-34 | Modules |
 | 35-57 | Boucle de jeu |
 | 58-69 | — Tick (20 Hz) |
-| 70-79 | — Actions des joueurs |
-| 80-92 | — Commandes de chat |
-| 93-101 | — Animaux et index de tuiles |
-| 102-116 | — Sessions et déconnexions |
-| 117-143 | Monde par chunks |
-| 144-150 | — Streaming de chunks |
-| 151-167 | IA des animaux (paramétrique) |
-| 168-195 | Sauvegarde |
-| 196-200 | Docs liées |
+| 70-81 | — Actions des joueurs |
+| 82-94 | — Commandes de chat |
+| 95-103 | — Animaux et index de tuiles |
+| 104-118 | — Sessions et déconnexions |
+| 119-145 | Monde par chunks |
+| 146-152 | — Streaming de chunks |
+| 153-169 | IA des animaux (paramétrique) |
+| 170-197 | Sauvegarde |
+| 198-202 | Docs liées |
 # Serveur : architecture
 
 > Vérifié le 2026-11-25 depuis `crates/server/src/` (`lib.rs`, `main.rs`, `net.rs`, `game.rs`, `ai.rs`, `save.rs`, `rng.rs`, `world/`). Fiche : [vue-ensemble.md](vue-ensemble.md).
@@ -69,11 +69,13 @@ Un `Move` reçu hors cooldown (`MOVE_COOLDOWN` = 90 ms) s'exécute tout de suite
 
 ### Actions des joueurs
 
-Dans `Game::handle` : `Interact`, `Build`, `Break` visent la tuile adjacente dans la direction donnée. `Build` pose `Tile::BUILT` (`Wall`) sur une tuile praticable, libre de joueur et d'animal. `Break` utilise `breaks_into` de la définition de la tuile. `set_tile` notifie par `TileChanged` les joueurs qui détiennent le chunk, plus un effet `Dust`.
+Dans `Game::handle` : `Interact`, `Build`, `Break` visent la tuile adjacente dans la direction donnée. `Build` pose `Tile::BUILT` (`Wall`) sur une tuile praticable, libre de joueur et d'animal. `Break` utilise `breaks_into` de la définition de la tuile ; si la définition a un `drops`, `add_item` ajoute 1 objet à `Player.inventory` et le journal dit « You break the tree and get 1 wood. ». Pile pleine (`MAX_STACK` = 999) : objet perdu, journal « Your bag is full of wood. ». `set_tile` notifie par `TileChanged` les joueurs qui détiennent le chunk, plus un effet `Dust`.
 
 Avant `Interact`, `Build` ou `Break`, un `pending_move` éventuel est appliqué immédiatement (`try_move`, cooldown ignoré pour ce move, `next_move` remis à jour) : l'action part de la position que le client croit avoir, l'ordre d'envoi est respecté. `Interact` cherche d'abord un joueur sur la tuile visée (salut), puis un animal (caresse) : un animal peut partager la tuile d'un joueur.
 
 `Chat` : caractères cachés supprimés (`is_hidden_char`, ZWJ conservé), `trim`, 240 caractères max (`MAX_CHAT`), message ignoré s'il n'a aucun caractère visible (`has_visible_char` : vide, blancs ou ZWJ seuls) ; diffusé à tous en `Log(Chat)`, sauf s'il commence par `/` (voir « Commandes de chat »).
+
+**Inventaire** : `Player.inventory` est un `Inventory` (`Vec<(Item, u16)>`, une pile par objet, ordre d'obtention). Il suit le joueur dans `offline` (`leave` le sauve, `join` le restaure) et dans le remplacement de session. Pas encore envoyé au client.
 
 Les animaux ne bloquent jamais un joueur (commentaire de `try_move`), mais un joueur bloque les animaux.
 
@@ -171,9 +173,9 @@ Priorité de décision dans `act` : animal apprivoisé trop loin (plus de `TELEP
 
 | Champ de `SaveData` | Contenu |
 |---|---|
-| `version` | `SAVE_VERSION` (1) ; lue seule en tête de fichier ; version inconnue (ex. future) : erreur « unsupported save version N » |
+| `version` | `SAVE_VERSION` (2) ; lue seule en tête de fichier ; version inconnue (ex. future) : erreur « unsupported save version N » |
 | `seed`, `next_id` | graine du monde, prochain identifiant d'entité |
-| `players` | `(nom, position, direction)` des joueurs connectés et hors ligne ; à la reconnexion sous le même nom, le joueur reprend sa position (`Game.offline`) |
+| `players` | `(nom, position, direction, inventaire)` des joueurs connectés et hors ligne ; à la reconnexion sous le même nom, le joueur reprend sa position et son inventaire (`Game.offline`) |
 | `chunks` | chunks modifiés uniquement |
 | `spawned` | chunks dont les animaux ont été créés |
 | `animals` | `(espèce, position, maître)` ; de nouveaux identifiants sont attribués au chargement ; deux animaux sur la même tuile : le second est ignoré (avertissement) |
@@ -183,7 +185,7 @@ Déclencheurs (`crates/server/src/lib.rs`) : toutes les 60 s (`AUTOSAVE`), et à
 - **Autosave asynchrone** : `game.to_save()` (clone, rapide) est pris dans la boucle de jeu, puis `save::write` (fsync) part dans `tokio::task::spawn_blocking` : les ticks ne sont plus bloqués par le disque. `run()` garde le `JoinHandle` ; si l'écriture précédente tourne encore (`!is_finished()`), le tick d'autosave est ignoré (« previous autosave still writing, skipped »), jamais deux écritures en parallèle.
 - **Sauvegarde finale** : synchrone, après avoir attendu (`await`) l'éventuelle écriture d'autosave en cours, pour ne jamais écrire deux fois en même temps dans `world.bin.tmp`. Au démarrage : sauvegarde existante (graine ignorée) sinon nouveau monde avec `--seed` ou une graine tirée de l'horloge.
 
-Chargement : `save::decode` lit d'abord `version` seule (`postcard::take_from_bytes::<u32>`, premier champ de `SaveData`, varint), puis dispatche par `match`. Aujourd'hui un seul bras (`SAVE_VERSION` => décode `SaveData`, puis `validate`) : pas de copie figée tant qu'une seule version existe.
+Chargement : `save::decode` lit d'abord `version` seule (`postcard::take_from_bytes::<u32>`, premier champ de `SaveData`, varint), puis dispatche par `match`. Deux bras : `SAVE_VERSION` (2) décode `SaveData` ; `1` décode `v1::SaveData` (copie figée, sans inventaire) puis la convertit (`From`, inventaires vides). `validate` s'applique ensuite aux deux.
 
 Validation au chargement (`save::validate`, appelée par `decode`) : chaque chunk de `chunks` doit avoir exactement `CHUNK_AREA` tuiles, sinon erreur « invalid chunk at (x, y) » (sinon panic d'index au premier accès). Un id de tuile inconnu est refusé par le décodage postcard (variante d'enum invalide). Le chargement renvoie donc `Err` (le serveur ne démarre pas) au lieu de paniquer plus tard. `save::read` préfixe toute erreur de décodage ou de validation par le chemin du fichier (`<world>/world.bin: ...`) ; le fichier n'est jamais écrasé.
 
