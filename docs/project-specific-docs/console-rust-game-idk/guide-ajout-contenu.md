@@ -1,4 +1,4 @@
-# Ajouter du contenu (tuiles, biomes, animaux, effets)
+# Ajouter du contenu (tuiles, biomes, animaux, effets, objets)
 
 Tout le contenu est déclaré dans des tables de `crates/shared/src/content/`, via la macro `content_table!` (`content/mod.rs`). Une ligne de table génère à la fois la variante d'enum (identifiant réseau et de sauvegarde) et sa définition : impossible de les désynchroniser.
 
@@ -11,6 +11,7 @@ Tout le contenu est déclaré dans des tables de `crates/shared/src/content/`, v
 | `Biome` / `BIOMES` | `content/biomes.rs` | couleur de sol, bande d'altitude, climat préféré (température, humidité), palette pondérée de tuiles, apparitions d'animaux par chunk |
 | `Species` / `SPECIES` | `content/species.rs` | nom, glyphe, couleur, paramètres d'IA (`Ai`), sons, réactions aux caresses |
 | `Effect` / `EFFECTS` | `content/effects.rs` | glyphe, couleur et durée d'un effet visuel éphémère |
+| `Item` / `ITEMS` | `content/items.rs` | nom, glyphe, couleur d'un objet |
 
 ## Glyphes
 
@@ -24,6 +25,8 @@ Tout le contenu est déclaré dans des tables de `crates/shared/src/content/`, v
 Nouvel animal : une ligne dans `SPECIES` (comportement composé avec les champs de `Ai` : `flee_radius`, `curious_radius`, `tameable`…), puis l'ajouter aux `spawns` d'un ou plusieurs biomes.
 
 Nouveau biome : une ligne dans `BIOMES`. Les biomes terrestres partagent la bande `LAND` ; dans une même bande, le biome au climat le plus proche gagne (`Biome::select`). Les bandes d'altitude doivent couvrir tout l'intervalle (test `elevation_bands_cover_range`).
+
+Nouvel objet : une ligne dans `ITEMS` (nom unique, glyphe, couleur), à la fin de la table. Pour qu'une tuile le donne quand on la casse, mettre `drops: Some(Item::X)` sur sa ligne de `TILES` : elle doit aussi avoir `breaks_into: Some(_)` (test `dropping_tiles_are_breakable`). Données seules pour l'instant : le serveur ne distribue pas encore les objets.
 
 ## Tests de non-régression
 
