@@ -142,6 +142,28 @@ pub fn write(dir: &Path, data: &SaveData) -> io::Result<()> {
     Ok(())
 }
 
+/// Copies tournantes : `world.bin.1` = la plus récente, `world.bin.<keep>` = la plus ancienne.
+/// À appeler avant `write` (même thread) : `world.bin` est copié, l'original reste en place.
+pub fn rotate_backups(dir: &Path, keep: u32) -> io::Result<()> {
+    let current = dir.join(FILE);
+    if keep == 0 || !current.exists() {
+        return Ok(());
+    }
+    let backup = |i: u32| dir.join(format!("{FILE}.{i}"));
+    match std::fs::remove_file(backup(keep)) {
+        Err(e) if e.kind() != io::ErrorKind::NotFound => return Err(e),
+        _ => {}
+    }
+    for i in (1..keep).rev() {
+        match std::fs::rename(backup(i), backup(i + 1)) {
+            Err(e) if e.kind() != io::ErrorKind::NotFound => return Err(e),
+            _ => {}
+        }
+    }
+    std::fs::copy(&current, backup(1))?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -239,6 +261,46 @@ mod tests {
         let err = read(&dir).err().unwrap();
         std::fs::remove_dir_all(&dir).unwrap();
         assert!(err.to_string().contains("world.bin"), "{err}");
+    }
+
+    fn temp_dir(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("idk-save-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn rotation_keeps_the_newest_copies() {
+        let dir = temp_dir("rotate");
+        for n in 1..=4u8 {
+            std::fs::write(dir.join(FILE), [n]).unwrap();
+            rotate_backups(&dir, 3).unwrap();
+        }
+        let read = |name: &str| std::fs::read(dir.join(name)).unwrap();
+        assert_eq!(read("world.bin"), [4]);
+        assert_eq!(read("world.bin.1"), [4]);
+        assert_eq!(read("world.bin.2"), [3]);
+        assert_eq!(read("world.bin.3"), [2]);
+        assert!(!dir.join("world.bin.4").exists());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn rotation_with_keep_zero_does_nothing() {
+        let dir = temp_dir("rotate-zero");
+        std::fs::write(dir.join(FILE), [1]).unwrap();
+        rotate_backups(&dir, 0).unwrap();
+        assert!(!dir.join("world.bin.1").exists());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn rotation_without_world_file_is_ok() {
+        let dir = temp_dir("rotate-empty");
+        rotate_backups(&dir, 3).unwrap();
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
