@@ -66,5 +66,50 @@ content_table! {
             sounds: &[],
             pet: &["The rabbit twitches its nose.", "The rabbit freezes, then relaxes."],
         },
+        Cat => SpeciesDef {
+            name: "cat", glyph: glyph('f', 'f', "🐈"), fg: Rgb(220, 170, 110),
+            ai: Ai { step_ms: 500, idle: 0.7, curious_radius: 3, tameable: true, sound_chance: 0.01, ..AI },
+            sounds: &["Meow.", "Mrrp?"],
+            pet: &["The cat purrs.", "The cat rubs against your leg."],
+        },
+        Pig => SpeciesDef {
+            name: "pig", glyph: glyph('p', 'p', "🐖"), fg: Rgb(240, 160, 170),
+            ai: Ai { step_ms: 1200, idle: 0.6, sound_chance: 0.015, ..AI },
+            sounds: &["Oink.", "Snort!"],
+            pet: &["The pig snuffles happily.", "The pig rolls over for a belly rub."],
+        },
+        Duck => SpeciesDef {
+            name: "duck", glyph: glyph('u', 'u', "🦆"), fg: Rgb(120, 180, 90),
+            ai: Ai { step_ms: 600, idle: 0.5, flee_radius: 2, sound_chance: 0.02, ..AI },
+            sounds: &["Quack.", "Quack quack!"],
+            pet: &["The duck waddles around you.", "The duck quacks and shakes its feathers."],
+        },
+        Goat => SpeciesDef {
+            name: "goat", glyph: glyph('g', 'g', "🐐"), fg: Rgb(190, 180, 165),
+            ai: Ai { step_ms: 400, idle: 0.5, flee_radius: 3, sound_chance: 0.01, ..AI },
+            sounds: &["Maaa.", "Meh-eh-eh!"],
+            pet: &["The goat nibbles at your sleeve.", "The goat butts your hand gently."],
+        },
+        Fox => SpeciesDef {
+            name: "fox", glyph: glyph('v', 'v', "🦊"), fg: Rgb(225, 120, 50),
+            ai: Ai { step_ms: 300, idle: 0.5, flee_radius: 6, sound_chance: 0.005, ..AI },
+            sounds: &["Yip!", "A fox barks in the distance."],
+            pet: &["The fox sniffs your hand warily.", "The fox lets you touch it, then darts back."],
+        },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::content::PLAYER_GLYPH;
+    use std::collections::HashSet;
+
+    #[test]
+    fn species_ascii_glyphs_are_unique() {
+        let mut seen = HashSet::new();
+        for g in SPECIES.iter().map(|s| s.glyph).chain([PLAYER_GLYPH]) {
+            assert!(seen.insert(g.ascii), "glyphe ASCII en double : {:?}", g.ascii);
+        }
     }
 }
