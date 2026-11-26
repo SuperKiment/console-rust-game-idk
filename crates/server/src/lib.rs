@@ -1,6 +1,7 @@
 //! Authoritative game server.
 
 pub mod ai;
+pub mod commands;
 pub mod game;
 pub mod net;
 pub mod rng;

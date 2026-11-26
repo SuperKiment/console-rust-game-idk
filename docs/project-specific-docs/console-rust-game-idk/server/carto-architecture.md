@@ -1,17 +1,18 @@
-14
+15
 | Lignes | Section |
 |---|---|
-| 19-32 | Modules |
-| 33-55 | Boucle de jeu |
-| 56-67 | — Tick (20 Hz) |
-| 68-77 | — Actions des joueurs |
-| 78-86 | — Animaux et index de tuiles |
-| 87-101 | — Sessions et déconnexions |
-| 102-128 | Monde par chunks |
-| 129-135 | — Streaming de chunks |
-| 136-152 | IA des animaux (paramétrique) |
-| 153-180 | Sauvegarde |
-| 181-185 | Docs liées |
+| 20-34 | Modules |
+| 35-57 | Boucle de jeu |
+| 58-69 | — Tick (20 Hz) |
+| 70-79 | — Actions des joueurs |
+| 80-92 | — Commandes de chat |
+| 93-101 | — Animaux et index de tuiles |
+| 102-116 | — Sessions et déconnexions |
+| 117-143 | Monde par chunks |
+| 144-150 | — Streaming de chunks |
+| 151-167 | IA des animaux (paramétrique) |
+| 168-195 | Sauvegarde |
+| 196-200 | Docs liées |
 # Serveur : architecture
 
 > Vérifié le 2026-11-25 depuis `crates/server/src/` (`lib.rs`, `main.rs`, `net.rs`, `game.rs`, `ai.rs`, `save.rs`, `rng.rs`, `world/`). Fiche : [vue-ensemble.md](vue-ensemble.md).
@@ -24,6 +25,7 @@
 | `src/lib.rs` | `run()` : boucle principale, chargement, autosauvegarde |
 | `src/net.rs` | `accept_loop`, une tâche par connexion, pont vers `Game` par canaux |
 | `src/game.rs` | `Game` : joueurs, animaux, actions, tick, envoi des messages |
+| `src/commands.rs` | commandes de chat (`/help`, `/who`, `/me`, `/msg`), table `COMMANDS` |
 | `src/ai.rs` | comportement des animaux, caresses et apprivoisement |
 | `src/world/mod.rs` | `World` : chunks en mémoire, apparitions, persistance |
 | `src/world/generator.rs`, `noise.rs` | génération procédurale (bruit de valeur fractal) |
@@ -71,9 +73,22 @@ Dans `Game::handle` : `Interact`, `Build`, `Break` visent la tuile adjacente dan
 
 Avant `Interact`, `Build` ou `Break`, un `pending_move` éventuel est appliqué immédiatement (`try_move`, cooldown ignoré pour ce move, `next_move` remis à jour) : l'action part de la position que le client croit avoir, l'ordre d'envoi est respecté. `Interact` cherche d'abord un joueur sur la tuile visée (salut), puis un animal (caresse) : un animal peut partager la tuile d'un joueur.
 
-`Chat` : caractères cachés supprimés (`is_hidden_char`, ZWJ conservé), `trim`, 240 caractères max (`MAX_CHAT`), message ignoré s'il n'a aucun caractère visible (`has_visible_char` : vide, blancs ou ZWJ seuls) ; diffusé à tous en `Log(Chat)`.
+`Chat` : caractères cachés supprimés (`is_hidden_char`, ZWJ conservé), `trim`, 240 caractères max (`MAX_CHAT`), message ignoré s'il n'a aucun caractère visible (`has_visible_char` : vide, blancs ou ZWJ seuls) ; diffusé à tous en `Log(Chat)`, sauf s'il commence par `/` (voir « Commandes de chat »).
 
 Les animaux ne bloquent jamais un joueur (commentaire de `try_move`), mais un joueur bloque les animaux.
+
+### Commandes de chat
+
+Un message de chat nettoyé qui commence par `/` est une commande, jamais diffusé tel quel : `handle` appelle `commands::run(game, conn, ligne_sans_slash)`. Le nom (1er mot) est insensible à la casse ; `/` seul vaut `/help`. Les réponses passent par les `LogKind` existants (`tell`, `broadcast_log`), sans changement de protocole ni de client.
+
+| Commande | Effet |
+|---|---|
+| `/help` | une ligne `Info` par entrée de `COMMANDS` : `/<usage> — <help>` |
+| `/who` | une ligne `Info` par joueur en ligne, triée par nom : distance (`Pos::dist`) et secteur (`cardinal`, 8 directions, `here` sous 2 tuiles) |
+| `/me <action>` | `Info` à tous : `* alice <action>` |
+| `/msg <nom> <texte>` | `Chat { from: "alice -> bob" }` à l'expéditeur et au destinataire (une copie si message à soi-même) ; le destinataire est le plus long nom en ligne suivi d'un espace (les noms peuvent en contenir) |
+
+Commande inconnue : `Unknown command /x, try /help.` ; arguments manquants : `Usage: <usage>`. Ajouter une commande : une entrée dans `COMMANDS` (`name`, `usage`, `help`, `run`) et sa fonction dans `src/commands.rs`.
 
 ### Animaux et index de tuiles
 

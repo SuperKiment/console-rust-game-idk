@@ -14,6 +14,7 @@ use idk_shared::protocol::{
 use tokio::sync::mpsc::Sender;
 use tokio::sync::mpsc::error::TrySendError;
 
+use crate::commands;
 use crate::rng::Rng;
 use crate::world::World;
 
@@ -258,7 +259,12 @@ impl Game {
             ClientMsg::Chat(text) => {
                 if let Some(text) = clean_chat(&text) {
                     let from = p.name.clone();
-                    self.broadcast(ServerMsg::Log(LogLine::new(LogKind::Chat { from }, text)));
+                    // Un `/` en tête = commande, pas un message public.
+                    if let Some(line) = text.strip_prefix('/') {
+                        commands::run(self, conn, line);
+                    } else {
+                        self.broadcast(ServerMsg::Log(LogLine::new(LogKind::Chat { from }, text)));
+                    }
                 }
             }
         }
@@ -504,7 +510,7 @@ fn clean_chat(raw: &str) -> Option<String> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use tokio::sync::mpsc::Receiver;
 
@@ -513,13 +519,13 @@ mod tests {
     }
 
     /// Like [`join`], but keeps the receiving end of the player's send queue.
-    fn join_rx(g: &mut Game, conn: ConnId, name: &str, now: Instant) -> Receiver<ServerMsg> {
+    pub(crate) fn join_rx(g: &mut Game, conn: ConnId, name: &str, now: Instant) -> Receiver<ServerMsg> {
         let (tx, rx) = tokio::sync::mpsc::channel(SEND_QUEUE);
         g.event(Event::Join { conn, name: name.into(), tx }, now);
         rx
     }
 
-    fn drain(rx: &mut Receiver<ServerMsg>) -> Vec<ServerMsg> {
+    pub(crate) fn drain(rx: &mut Receiver<ServerMsg>) -> Vec<ServerMsg> {
         std::iter::from_fn(|| rx.try_recv().ok()).collect()
     }
 
