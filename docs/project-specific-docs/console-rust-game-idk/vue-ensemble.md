@@ -24,7 +24,7 @@ Les deux binaires ne se référencent pas : tout passe par le protocole de `idk-
 ## Docs transverses
 
 - [carto-protocole.md](carto-protocole.md) : framing, messages, séquence de connexion, versionnement.
-- [guide-ajout-contenu.md](guide-ajout-contenu.md) : ajouter tuiles, biomes, animaux, effets.
+- [guide-ajout-contenu.md](guide-ajout-contenu.md) : ajouter tuiles, biomes, animaux, effets, objets.
 - [server/carto-architecture.md](server/carto-architecture.md), [client/carto-architecture.md](client/carto-architecture.md).
 
 ## Dossiers sans code Rust

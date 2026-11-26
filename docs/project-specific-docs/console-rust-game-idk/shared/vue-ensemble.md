@@ -1,13 +1,13 @@
 # shared
 
-> Dépôt `console-rust-game-idk`, chemin `crates/shared/` (paquet `idk-shared`). Vérifié le 2026-11-25 depuis `crates/shared/Cargo.toml` et `crates/shared/src/`.
+> Dépôt `console-rust-game-idk`, chemin `crates/shared/` (paquet `idk-shared`). Vérifié le 2026-11-26 depuis `crates/shared/Cargo.toml` et `crates/shared/src/`.
 
 ## À quoi ça sert
 
 Code commun au serveur et au client, pour qu'ils ne puissent pas diverger :
 - `src/geo.rs` : `Pos`, `ChunkPos`, `Dir`, `CHUNK_SIZE = 32`, conversions position/chunk/index local.
-- `src/content/` : tables de contenu (`Tile`, `Biome`, `Species`, `Effect`) générées par la macro `content_table!`, plus `Rgb`, `Glyph`, `PLAYER_GLYPH`, `PLAYER_COLORS`.
-- `src/protocol.rs` : `ClientMsg`, `ServerMsg`, `PROTOCOL_VERSION`, `DEFAULT_PORT`, `VIEW_CHUNKS`, `KEEP_CHUNKS`, `MAX_NAME` (16), `MAX_CHAT` (240), `is_hidden_char` (propriété Unicode `Default_Ignorable_Code_Point` + contrôles, sans contexte), `is_hidden_after` (idem avec contexte : garde un sélecteur de variante derrière un caractère visible), `strip_hidden`, `has_visible_char` (vrai s'il reste un caractère visible : ni blanc, ni caché, ni ZWJ seul, ni marque combinante courante), `clean_name` (nettoyage du nom, `player` si rien de visible, partagé serveur et client).
+- `src/content/` : tables de contenu (`Tile`, `Biome`, `Species`, `Effect`, `Item`) générées par la macro `content_table!`, plus `Rgb`, `Glyph`, `PLAYER_GLYPH`, `PLAYER_COLORS`.
+- `src/protocol.rs` : `ClientMsg`, `ServerMsg` (dont `Inventory`, sac complet du joueur), `PROTOCOL_VERSION`, `DEFAULT_PORT`, `VIEW_CHUNKS`, `KEEP_CHUNKS`, `MAX_NAME` (16), `MAX_CHAT` (240), `is_hidden_char` (propriété Unicode `Default_Ignorable_Code_Point` + contrôles, sans contexte), `is_hidden_after` (idem avec contexte : garde un sélecteur de variante derrière un caractère visible), `strip_hidden`, `has_visible_char` (vrai s'il reste un caractère visible : ni blanc, ni caché, ni ZWJ seul, ni marque combinante courante), `clean_name` (nettoyage du nom, `player` si rien de visible, partagé serveur et client).
 - `src/net.rs` : `split()`, `Reader::recv`, `Writer::send` (longueur + postcard).
 
 ## Techno
@@ -20,11 +20,11 @@ Ne dépend d'aucun autre crate du workspace. Utilisé par `idk-server` et `idk-c
 
 ## Place dans l'ensemble
 
-Source de vérité du contenu (une ligne de table = variante + définition) et du format réseau. Le serveur lit les champs de gameplay (`walkable`, `breaks_into`, `Ai`, `spawns`), le client les champs d'affichage (`glyph`, `fg`, `bg`).
+Source de vérité du contenu (une ligne de table = variante + définition) et du format réseau. Le serveur lit les champs de gameplay (`walkable`, `breaks_into`, `drops`, `Ai`, `spawns`), le client les champs d'affichage (`glyph`, `fg`, `bg`).
 
 ## Tests
 
-Tests unitaires dans `src/net.rs` (aller-retour TCP), `src/content/mod.rs` (glyphes larges, biomes valides, invariants des espèces : `step_ms` > 0, phrases de caresse non vides, sons ; durée des effets ; tuiles cassées praticables), `src/content/biomes.rs` (`elevation_bands_cover_range`, `climate_picks_nearest`), `src/geo.rs` (géométrie), `src/protocol.rs` (`clean_name`, `is_hidden_char`, `strip_hidden`, `has_visible_char`, emoji `❤️` et ZWJ conservés). `cargo test -p idk-shared`.
+Tests unitaires dans `src/net.rs` (aller-retour TCP), `src/content/mod.rs` (glyphes larges, biomes valides, invariants des espèces : `step_ms` > 0, phrases de caresse non vides, sons ; durée des effets ; tuiles cassées praticables), `src/content/biomes.rs` (`elevation_bands_cover_range`, `climate_picks_nearest`), `src/content/items.rs` (`dropping_tiles_are_breakable`, `item_names_are_unique`), `src/geo.rs` (géométrie), `src/protocol.rs` (`clean_name`, `is_hidden_char`, `strip_hidden`, `has_visible_char`, emoji `❤️` et ZWJ conservés). `cargo test -p idk-shared`.
 
 ## Docs liées
 

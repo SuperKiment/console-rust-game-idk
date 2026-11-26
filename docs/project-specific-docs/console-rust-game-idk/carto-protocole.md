@@ -103,7 +103,7 @@ File d'envoi serveur par client : `mpsc::channel(SEND_QUEUE)` = 256 messages. En
 > Tout changement incompatible de `ClientMsg`, `ServerMsg` ou de leurs types imbriqués incrémente `PROTOCOL_VERSION` (actuellement 3). Postcard n'a pas de champs nommés : l'ordre des variantes et des champs est le format.
 
 - Ajouter une variante de message : à la **fin** de l'enum, puis incrémenter la version.
-- Contenu (`Tile`, `Biome`, `Species`, `Effect`) : ces enums transitent aussi sur le réseau (`ChunkData`, `Look`, `Effect`) et dans la sauvegarde. Ajouter les lignes en **fin de table**, jamais en milieu ni en suppression. Voir [guide-ajout-contenu.md](guide-ajout-contenu.md).
+- Contenu (`Tile`, `Biome`, `Species`, `Effect`, `Item`) : ces enums transitent aussi sur le réseau (`ChunkData`, `Look`, `Effect`, `Inventory`) et dans la sauvegarde. Ajouter les lignes en **fin de table**, jamais en milieu ni en suppression. Voir [guide-ajout-contenu.md](guide-ajout-contenu.md).
 - Un client dont la version diffère reçoit `Rejected` : il faut le recompiler.
 - Le format de sauvegarde a sa propre version (`SAVE_VERSION`, voir [server/carto-architecture.md](server/carto-architecture.md), section « Sauvegarde »).
 
