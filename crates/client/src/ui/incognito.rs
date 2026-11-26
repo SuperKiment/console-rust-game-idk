@@ -86,16 +86,16 @@ fn draw_log(f: &mut Frame, app: &App, area: Rect) {
     let paint = |c| app.config.colors.paint(c);
     let [header, body] = Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(area);
     f.render_widget(
-        Paragraph::new(" OUTPUT").style(Style::new().fg(paint(t.dim)).bg(paint(t.border))),
+        Paragraph::new(match app.state.log_scroll {
+            0 => " OUTPUT".to_string(),
+            n => format!(" OUTPUT ({n} more)"),
+        })
+        .style(Style::new().fg(paint(t.dim)).bg(paint(t.border))),
         header,
     );
     let lines: Vec<Line> = app
         .state
-        .log
-        .iter()
-        .rev()
-        .take(body.height as usize)
-        .rev()
+        .visible_log(body.height as usize)
         .map(|e| {
             let level = level(&e.line);
             let level_style = match level {

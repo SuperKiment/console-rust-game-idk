@@ -12,6 +12,12 @@ pub enum Action {
     Break,
     Chat,
     ToggleIncognito,
+    /// PgUp : remonte le journal.
+    LogUp,
+    /// PgDn : redescend le journal.
+    LogDown,
+    /// End : retour en bas du journal.
+    LogEnd,
     /// Ctrl+C : quitte tout de suite.
     Quit,
     /// Esc : quitte après confirmation (second Esc rapproché).
@@ -25,7 +31,7 @@ pub struct Binding {
     pub help: Option<(&'static str, &'static str)>,
 }
 
-use KeyCode::{Char, Down, Enter, Esc, F, Left, Right, Up};
+use KeyCode::{Char, Down, End, Enter, Esc, F, Left, PageDown, PageUp, Right, Up};
 
 pub const BINDINGS: &[Binding] = &[
     Binding {
@@ -49,6 +55,9 @@ pub const BINDINGS: &[Binding] = &[
     Binding { keys: &[Char('x')], action: Action::Break, help: Some(("x", "break")) },
     Binding { keys: &[Enter, Char('t')], action: Action::Chat, help: Some(("t enter", "chat")) },
     Binding { keys: &[F(2)], action: Action::ToggleIncognito, help: Some(("F2", "incognito")) },
+    Binding { keys: &[PageUp], action: Action::LogUp, help: Some(("pgup pgdn", "scroll log")) },
+    Binding { keys: &[PageDown], action: Action::LogDown, help: None },
+    Binding { keys: &[End], action: Action::LogEnd, help: None },
     Binding { keys: &[Esc], action: Action::ConfirmQuit, help: Some(("esc esc ctrl-c", "quit")) },
 ];
 
@@ -115,6 +124,14 @@ mod tests {
         assert_eq!(action_for(key('W')), Some(Action::Move(Dir::North)));
         assert_eq!(action_for(key('q')), Some(Action::Move(Dir::West)));
         assert_eq!(action_for(KeyEvent::new(Char('c'), KeyModifiers::CONTROL)), Some(Action::Quit));
+    }
+
+    #[test]
+    fn page_keys_scroll_log() {
+        let key = |c| KeyEvent::new(c, KeyModifiers::NONE);
+        assert_eq!(action_for(key(KeyCode::PageUp)), Some(Action::LogUp));
+        assert_eq!(action_for(key(KeyCode::PageDown)), Some(Action::LogDown));
+        assert_eq!(action_for(key(KeyCode::End)), Some(Action::LogEnd));
     }
 
     #[test]

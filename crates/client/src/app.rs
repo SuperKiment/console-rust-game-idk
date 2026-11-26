@@ -14,6 +14,8 @@ use crate::net::{self, NetEvent};
 use crate::state::GameState;
 
 const FRAME: Duration = Duration::from_millis(33);
+/// Entrées du journal sautées par PgUp / PgDn.
+const LOG_PAGE: usize = 5;
 const NOT_CONNECTED: &str = "Not connected.";
 /// Délai max entre deux Esc pour confirmer la sortie.
 const QUIT_CONFIRM: Duration = Duration::from_secs(2);
@@ -244,6 +246,9 @@ impl App {
             }
             Action::Chat => self.mode = Mode::Chat(String::new()),
             Action::ToggleIncognito => self.incognito = !self.incognito,
+            Action::LogUp => self.state.scroll_log(true, LOG_PAGE),
+            Action::LogDown => self.state.scroll_log(false, LOG_PAGE),
+            Action::LogEnd => self.state.log_scroll = 0,
             Action::Quit => self.quit = true,
             Action::ConfirmQuit => self.confirm_quit(Instant::now()),
         }
@@ -529,5 +534,40 @@ mod tests {
         app.on_net(NetEvent::Disconnected("gone".into()));
         app.on_net(NetEvent::Connecting);
         assert!(matches!(&app.status, Status::Offline(r) if r == "gone"));
+    }
+
+    fn screen(app: &App) -> String {
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+        let mut term = Terminal::new(TestBackend::new(120, 40)).unwrap();
+        term.draw(|f| crate::ui::draw(f, app)).unwrap();
+        term.backend().to_string()
+    }
+
+    #[test]
+    fn page_up_shows_older_entries_and_end_returns() {
+        let mut app = App::for_test(Status::Online);
+        for i in 0..30 {
+            app.state.push_log(LogLine::new(LogKind::Info, format!("msg{i:02}")));
+        }
+        let s = screen(&app);
+        assert!(s.contains("msg29") && !s.contains("msg20"), "{s}");
+        app.on_terminal(Event::Key(KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE)));
+        let s = screen(&app);
+        assert!(s.contains("msg20") && !s.contains("msg29") && s.contains("↓5"), "{s}");
+        app.on_terminal(Event::Key(KeyEvent::new(KeyCode::End, KeyModifiers::NONE)));
+        let s = screen(&app);
+        assert!(s.contains("msg29") && !s.contains("↓5"), "{s}");
+    }
+
+    #[test]
+    fn page_up_is_ignored_in_chat() {
+        let mut app = App::for_test(Status::Online);
+        for i in 0..30 {
+            app.state.push_log(LogLine::new(LogKind::Info, i.to_string()));
+        }
+        app.mode = Mode::Chat(String::new());
+        app.on_terminal(Event::Key(KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE)));
+        assert_eq!(app.state.log_scroll, 0);
     }
 }

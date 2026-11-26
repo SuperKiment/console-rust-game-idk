@@ -49,6 +49,7 @@ Options client : `--server`, `--name`, `--incognito`, `--configure` (env `IDK_SE
 | `b` | construire un mur |
 | `x` | casser |
 | `t`, entrée | chat (entrée envoie, `esc` annule) |
+| `PgUp`, `PgDn`, `fin` | remonter, redescendre le journal, revenir en bas |
 | `F2` | basculer le mode incognito |
 | `esc` deux fois de suite (entre 0,15 et 2 s d'écart, toute autre touche annule ; esc maintenu ne quitte pas), `ctrl-c` | quitter (`ctrl-c` directement) |
 

@@ -183,10 +183,12 @@ pub fn draw(f: &mut Frame, app: &App) {
         app,
         t,
         log,
-        block(if matches!(app.mode, Mode::Chat(_)) {
-            pick(g, "chat · enter send · esc cancel", "chat - enter send - esc cancel")
+        block(&if matches!(app.mode, Mode::Chat(_)) {
+            pick(g, "chat · enter send · esc cancel", "chat - enter send - esc cancel").to_string()
+        } else if app.state.log_scroll > 0 {
+            format!("log {}{}", pick(g, "↓", "v"), app.state.log_scroll)
         } else {
-            "log"
+            "log".to_string()
         }),
     );
     draw_status(f, app, t, map_area);
@@ -223,11 +225,7 @@ fn draw_log(f: &mut Frame, app: &App, t: &Theme, area: Rect, block: Block) {
     let rows = inner.height.saturating_sub(input_rows) as usize;
     let lines: Vec<Line> = app
         .state
-        .log
-        .iter()
-        .rev()
-        .take(rows)
-        .rev()
+        .visible_log(rows)
         .map(|e| {
             let time = Span::styled(
                 format!("{} ", super::clock(shifted(e.time, utc_offset()) % 86_400)),
