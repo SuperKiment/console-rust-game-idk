@@ -40,7 +40,7 @@ content_table! {
     Tile: TileDef => TILES {
         Grass => TileDef { name: "grass", glyph: glyph('.', '·', "· "), fg: Rgb(98, 160, 72), ..GROUND },
         TallGrass => TileDef { name: "tall grass", glyph: glyph('"', '"', "\" "), fg: Rgb(120, 190, 80), ..GROUND },
-        Flowers => TileDef { name: "flowers", glyph: glyph('*', '✿', "🌼"), fg: Rgb(235, 200, 90), ..GROUND },
+        Flowers => TileDef { name: "flowers", glyph: glyph('*', '✿', "🌼"), fg: Rgb(235, 200, 90), breaks_into: Some(Tile::Grass), drops: Some(Item::Flower), ..GROUND },
         Dirt => TileDef { name: "dirt", glyph: glyph('.', '·', "· "), fg: Rgb(150, 110, 70), ..GROUND },
         Sand => TileDef { name: "sand", glyph: glyph('.', '∙', "∙ "), fg: Rgb(220, 200, 130), ..GROUND },
         Snow => TileDef { name: "snow", glyph: glyph('.', '·', "· "), fg: Rgb(230, 235, 245), ..GROUND },
