@@ -56,7 +56,7 @@ Options client : `--server`, `--name`, `--incognito`, `--configure` (env `IDK_SE
 
 ## Commandes de chat
 
-Un message qui commence par `/` est une commande (réponse visible par toi seul, sauf `/me` et `/msg`) :
+Un message qui commence par `/` est une commande (réponse visible par toi seul, sauf `/me`, `/msg` et `/tp`) :
 
 | Commande | Effet |
 |---|---|
@@ -64,6 +64,7 @@ Un message qui commence par `/` est une commande (réponse visible par toi seul,
 | `/who` | joueurs en ligne, distance et direction (N, NE, E…) |
 | `/me <action>` | action visible de tous : `* alice <action>` |
 | `/msg <nom> <texte>` | message privé (le nom peut contenir des espaces) |
+| `/tp <nom>` | te téléporte à côté du joueur (nom entier, casse ignorée ; refusé si aucune tuile libre autour) |
 
 ## Config client
 

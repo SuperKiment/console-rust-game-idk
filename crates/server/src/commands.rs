@@ -1,6 +1,7 @@
-//! Commandes de chat (`/help`, `/who`, `/me`, `/msg`) : un message commençant par `/` n'est pas diffusé.
+//! Commandes de chat (`/help`, `/who`, `/me`, `/msg`, `/tp`) : un message commençant par `/` n'est pas diffusé.
 //! Ajouter une commande = une entrée dans [`COMMANDS`] et sa fonction.
 
+use idk_shared::content::Effect;
 use idk_shared::geo::Pos;
 use idk_shared::protocol::LogKind;
 
@@ -20,6 +21,7 @@ pub const COMMANDS: &[Command] = &[
     Command { name: "who", usage: "who", help: "players online, distance and direction", run: who },
     Command { name: "me", usage: "me <action>", help: "describe an action to everyone", run: me },
     Command { name: "msg", usage: "msg <name> <text>", help: "private message", run: msg },
+    Command { name: "tp", usage: "tp <name>", help: "teleport next to a player", run: tp },
 ];
 
 /// Exécute une commande. `line` est le texte du chat sans le `/` initial.
@@ -106,6 +108,28 @@ fn msg(game: &mut Game, conn: ConnId, args: &str) {
     }
 }
 
+fn tp(game: &mut Game, conn: ConnId, args: &str) {
+    if args.is_empty() {
+        return usage(game, conn, "tp");
+    }
+    // Tout l'argument est le nom (qui peut contenir des espaces), casse ASCII ignorée.
+    let Some((&to_conn, to)) = game.players.iter().find(|(_, p)| p.name.eq_ignore_ascii_case(args)) else {
+        return game.tell(conn, LogKind::Info, format!("No player named {args} online."));
+    };
+    if to_conn == conn {
+        return game.tell(conn, LogKind::Info, "You are already here.");
+    }
+    let (to_name, to_pos) = (to.name.clone(), to.pos);
+    let Some(from) = game.players.get(&conn).map(|p| p.name.clone()) else { return };
+    let Some(spot) = game.free_spot_near(to_pos) else {
+        return game.tell(conn, LogKind::Info, format!("No room next to {to_name}."));
+    };
+    game.teleport_player(conn, spot);
+    game.effect(spot, Effect::Dust);
+    game.tell(conn, LogKind::Info, format!("You teleport to {to_name}."));
+    game.tell(to_conn, LogKind::Info, format!("{from} teleported next to you."));
+}
+
 /// Secteur (N, NE, E, SE, S, SW, W, NW) de `to` vu depuis `from`. `y` croît vers le sud.
 pub fn cardinal(from: Pos, to: Pos) -> &'static str {
     const SECTORS: [&str; 8] = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
@@ -119,6 +143,8 @@ pub fn cardinal(from: Pos, to: Pos) -> &'static str {
 mod tests {
     use std::time::Instant;
 
+    use idk_shared::content::Tile;
+    use idk_shared::geo::Dir;
     use idk_shared::protocol::{LogLine, ServerMsg};
 
     use super::*;
@@ -212,6 +238,50 @@ mod tests {
         run(&mut g, 1, "msg carol");
         assert_eq!(logs(&mut rxs[0])[0].text, "Usage: /msg <name> <text>");
         assert!(logs(&mut rxs[2]).is_empty());
+    }
+
+    #[test]
+    fn tp_next_to_target() {
+        let (mut g, mut rxs) = setup();
+        let t = g.players[&2].pos;
+        for d in Dir::ALL {
+            g.world.set_tile(t.step(d), Tile::Grass);
+        }
+        g.clear_animals();
+        g.players.get_mut(&1).unwrap().pos = Pos::new(t.x + 200, t.y);
+        run(&mut g, 1, "tp BOB smith");
+        assert_eq!(g.players[&1].pos.dist(t), 1);
+        assert_eq!(logs(&mut rxs[0])[0].text, "You teleport to bob smith.");
+        assert_eq!(logs(&mut rxs[1])[0].text, "alice teleported next to you.");
+    }
+
+    #[test]
+    fn tp_refused_when_surrounded() {
+        let (mut g, mut rxs) = setup();
+        let t = g.players[&2].pos;
+        for d in Dir::ALL {
+            g.world.set_tile(t.step(d), Tile::BUILT);
+        }
+        let far = Pos::new(t.x + 200, t.y);
+        g.players.get_mut(&1).unwrap().pos = far;
+        run(&mut g, 1, "tp bob smith");
+        assert_eq!(g.players[&1].pos, far);
+        assert_eq!(logs(&mut rxs[0])[0].text, "No room next to bob smith.");
+        assert!(logs(&mut rxs[1]).is_empty());
+    }
+
+    #[test]
+    fn tp_unknown_self_and_usage() {
+        let (mut g, mut rxs) = setup();
+        let before = g.players[&1].pos;
+        run(&mut g, 1, "tp zed");
+        assert_eq!(logs(&mut rxs[0])[0].text, "No player named zed online.");
+        run(&mut g, 1, "tp alice");
+        assert_eq!(logs(&mut rxs[0])[0].text, "You are already here.");
+        run(&mut g, 1, "tp");
+        assert_eq!(logs(&mut rxs[0])[0].text, "Usage: /tp <name>");
+        assert_eq!(g.players[&1].pos, before);
+        assert!(logs(&mut rxs[1]).is_empty());
     }
 
     #[test]

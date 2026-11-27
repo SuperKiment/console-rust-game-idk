@@ -463,6 +463,20 @@ impl Game {
         self.players.values().any(|p| p.pos == pos)
     }
 
+    /// Première tuile voisine de `pos` marchable, sans joueur ni animal.
+    pub fn free_spot_near(&mut self, pos: Pos) -> Option<Pos> {
+        Dir::ALL.into_iter().map(|d| pos.step(d)).find(|p| crate::ai::free(self, *p))
+    }
+
+    /// Téléporte un joueur : annule son déplacement en attente. Le streaming des chunks et la
+    /// diffusion aux autres suivent au prochain tick. L'appelant a vérifié que `pos` est libre.
+    pub fn teleport_player(&mut self, conn: ConnId, pos: Pos) {
+        if let Some(p) = self.players.get_mut(&conn) {
+            p.pos = pos;
+            p.pending_move = None;
+        }
+    }
+
     pub fn conn_of(&self, name: &str) -> Option<ConnId> {
         self.players.iter().find(|(_, p)| p.name == name).map(|(c, _)| *c)
     }

@@ -5,14 +5,14 @@
 | 35-57 | Boucle de jeu |
 | 58-69 | — Tick (20 Hz) |
 | 70-81 | — Actions des joueurs |
-| 82-94 | — Commandes de chat |
-| 95-103 | — Animaux et index de tuiles |
-| 104-118 | — Sessions et déconnexions |
-| 119-145 | Monde par chunks |
-| 146-152 | — Streaming de chunks |
-| 153-169 | IA des animaux (paramétrique) |
-| 170-199 | Sauvegarde |
-| 200-204 | Docs liées |
+| 82-95 | — Commandes de chat |
+| 96-104 | — Animaux et index de tuiles |
+| 105-119 | — Sessions et déconnexions |
+| 120-146 | Monde par chunks |
+| 147-153 | — Streaming de chunks |
+| 154-170 | IA des animaux (paramétrique) |
+| 171-200 | Sauvegarde |
+| 201-205 | Docs liées |
 # Serveur : architecture
 
 > Vérifié le 2026-11-27 depuis `crates/server/src/` (`lib.rs`, `main.rs`, `net.rs`, `game.rs`, `ai.rs`, `save.rs`, `rng.rs`, `world/`). Fiche : [vue-ensemble.md](vue-ensemble.md).
@@ -25,7 +25,7 @@
 | `src/lib.rs` | `run()` : boucle principale, chargement, autosauvegarde |
 | `src/net.rs` | `accept_loop`, une tâche par connexion, pont vers `Game` par canaux |
 | `src/game.rs` | `Game` : joueurs, animaux, actions, tick, envoi des messages |
-| `src/commands.rs` | commandes de chat (`/help`, `/who`, `/me`, `/msg`), table `COMMANDS` |
+| `src/commands.rs` | commandes de chat (`/help`, `/who`, `/me`, `/msg`, `/tp`), table `COMMANDS` |
 | `src/ai.rs` | comportement des animaux, caresses et apprivoisement |
 | `src/world/mod.rs` | `World` : chunks en mémoire, apparitions, persistance |
 | `src/world/generator.rs`, `noise.rs` | génération procédurale (bruit de valeur fractal) |
@@ -89,6 +89,7 @@ Un message de chat nettoyé qui commence par `/` est une commande, jamais diffus
 | `/who` | une ligne `Info` par joueur en ligne, triée par nom : distance (`Pos::dist`) et secteur (`cardinal`, 8 directions, `here` sous 2 tuiles) |
 | `/me <action>` | `Info` à tous : `* alice <action>` |
 | `/msg <nom> <texte>` | `Chat { from: "alice -> bob" }` à l'expéditeur et au destinataire (une copie si message à soi-même) ; le destinataire est le plus long nom en ligne suivi d'un espace, casse ASCII ignorée (les noms peuvent en contenir) |
+| `/tp <nom>` | nom = tout l'argument (espaces permis), casse ASCII ignorée ; place le joueur sur la 1re tuile voisine libre de la cible (`Game::free_spot_near`, même règle que le retour des animaux apprivoisés), annule `pending_move`, effet `Dust`, log Info aux deux ; refus : « No player named X online. », « You are already here. », « No room next to X. ». Chunks et position suivent au tick suivant |
 
 Commande inconnue : `Unknown command /x, try /help.` ; arguments manquants : `Usage: <usage>`. Ajouter une commande : une entrée dans `COMMANDS` (`name`, `usage`, `help`, `run`) et sa fonction dans `src/commands.rs`.
 

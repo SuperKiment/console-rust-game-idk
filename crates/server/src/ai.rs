@@ -117,8 +117,7 @@ fn try_step(game: &mut Game, id: EntityId, dir: Dir) {
 }
 
 fn teleport_near(game: &mut Game, id: EntityId, target: Pos) {
-    let spot = Dir::ALL.into_iter().map(|d| target.step(d)).find(|p| free(game, *p));
-    if let Some(p) = spot {
+    if let Some(p) = game.free_spot_near(target) {
         game.move_animal(id, p);
     }
 }
