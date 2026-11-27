@@ -51,6 +51,21 @@ pub fn add_item(inv: &mut Inventory, item: Item) -> bool {
     }
 }
 
+/// Retire `cost` du sac : tout ou rien. Une pile tombée à 0 est retirée. `false` si un objet manque.
+pub fn remove_items(inv: &mut Inventory, cost: &[(Item, u16)]) -> bool {
+    let has = |item: Item, n: u16| inv.iter().any(|&(i, c)| i == item && c >= n);
+    if !cost.iter().all(|&(item, n)| has(item, n)) {
+        return false;
+    }
+    for &(item, n) in cost {
+        if let Some((_, c)) = inv.iter_mut().find(|(i, _)| *i == item) {
+            *c -= n;
+        }
+    }
+    inv.retain(|&(_, c)| c > 0);
+    true
+}
+
 /// What the network layer reports to the game.
 pub enum Event {
     Join { conn: ConnId, name: String, tx: Sender<ServerMsg> },
@@ -342,8 +357,16 @@ impl Game {
             || self.players.values().any(|p| p.pos == target);
         if blocked {
             self.tell(conn, LogKind::Info, "You can't build there.");
-        } else {
+            return;
+        }
+        let cost = Tile::BUILT.def().cost;
+        let Some(player) = self.players.get_mut(&conn) else { return };
+        if remove_items(&mut player.inventory, cost) {
             self.set_tile(target, Tile::BUILT);
+            self.send_inventory(conn);
+        } else {
+            let list: Vec<String> = cost.iter().map(|(item, n)| format!("{n} {}", item.def().name)).collect();
+            self.tell(conn, LogKind::Info, format!("You need {}.", list.join(" and ")));
         }
     }
 
@@ -598,6 +621,7 @@ pub(crate) mod tests {
         let mut g = Game::new(World::new(5));
         join(&mut g, 1, "alice", now);
         g.clear_animals();
+        g.players.get_mut(&1).unwrap().inventory = vec![(Item::Stone, 1)];
         let o = grass_field(&mut g);
         let ms = Duration::from_millis;
         g.event(Event::Msg(1, ClientMsg::Move(Dir::East)), now);
@@ -845,6 +869,46 @@ pub(crate) mod tests {
         let logs = break_east(&mut g, &mut rx, Tile::TallGrass, now);
         assert!(g.players[&1].inventory.is_empty());
         assert_eq!(logs, vec!["Nothing to break here (tall grass).".to_string()]);
+    }
+
+    #[test]
+    fn remove_items_is_all_or_nothing() {
+        let mut inv: Inventory = vec![(Item::Stone, 2), (Item::Wood, 1)];
+        assert!(!remove_items(&mut inv, &[(Item::Stone, 1), (Item::Wood, 2)]));
+        assert_eq!(inv, vec![(Item::Stone, 2), (Item::Wood, 1)]);
+        assert!(!remove_items(&mut inv, &[(Item::Fiber, 1)]));
+        assert!(remove_items(&mut inv, &[(Item::Wood, 1), (Item::Stone, 1)]));
+        assert_eq!(inv, vec![(Item::Stone, 1)]);
+    }
+
+    #[test]
+    fn build_without_stone_is_refused() {
+        let now = Instant::now();
+        let mut g = Game::new(World::new(5));
+        let mut rx = join_rx(&mut g, 1, "alice", now);
+        g.clear_animals();
+        let o = grass_field(&mut g);
+        drain(&mut rx);
+        g.event(Event::Msg(1, ClientMsg::Build(Dir::East)), now);
+        assert_eq!(g.world.tile(Pos::new(o.x + 1, o.y)), Tile::Grass);
+        assert!(g.players[&1].inventory.is_empty());
+        let msgs = drain(&mut rx);
+        assert!(format!("{msgs:?}").contains("You need 1 stone."), "{msgs:?}");
+    }
+
+    #[test]
+    fn build_consumes_stone_and_sends_inventory() {
+        let now = Instant::now();
+        let mut g = Game::new(World::new(5));
+        let mut rx = join_rx(&mut g, 1, "alice", now);
+        g.clear_animals();
+        g.players.get_mut(&1).unwrap().inventory = vec![(Item::Stone, 2)];
+        let o = grass_field(&mut g);
+        drain(&mut rx);
+        g.event(Event::Msg(1, ClientMsg::Build(Dir::East)), now);
+        assert_eq!(g.world.tile(Pos::new(o.x + 1, o.y)), Tile::BUILT);
+        assert_eq!(g.players[&1].inventory, vec![(Item::Stone, 1)]);
+        assert!(drain(&mut rx).contains(&ServerMsg::Inventory(vec![(Item::Stone, 1)])));
     }
 
     #[test]
