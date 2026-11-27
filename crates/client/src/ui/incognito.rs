@@ -205,13 +205,31 @@ fn draw_bar(f: &mut Frame, app: &App, area: Rect) {
         // `Mode::Help` n'existe pas en incognito (F1 ignoré) ; traité comme `Play` par exhaustivité.
         Mode::Play | Mode::Help { .. } => match notice(app) {
             Some(n) => format!(" {n}"),
-            None => app.state.my_pos().map(|p| format!(" Ln {}, Col {}", p.y, p.x)).unwrap_or_default(),
+            None => app
+                .state
+                .my_pos()
+                .map(|p| format!(" Ln {}, Col {}{}", p.y, p.x, deps(app)))
+                .unwrap_or_default(),
         },
     };
     if typing && mid.width > 0 {
         f.set_cursor_position(Position::new(mid.x + Line::from(middle.as_str()).width() as u16, mid.y));
     }
     f.render_widget(Paragraph::new(middle).style(bar), mid);
+}
+
+/// Inventaire déguisé en dépendances : ` | deps: wood=12 stone=3` (vide si le sac l'est).
+fn deps(app: &App) -> String {
+    if app.state.inventory.is_empty() {
+        return String::new();
+    }
+    let list: Vec<String> = app
+        .state
+        .inventory
+        .iter()
+        .map(|(item, n)| format!("{}={n}", item.def().name.replace(' ', "_")))
+        .collect();
+    format!(" | deps: {}", list.join(" "))
 }
 
 fn users(n: usize) -> String {
@@ -314,5 +332,35 @@ mod tests {
         term.draw(|f| draw(f, &app)).unwrap();
         let screen = term.backend().to_string();
         assert!(screen.contains("FINMSG") && screen.contains("derniere"), "{screen}");
+    }
+
+    #[test]
+    fn inventory_shows_as_deps_in_the_status_bar() {
+        use idk_shared::content::Item;
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+        let mut app = App::for_test(Status::Online);
+        let now = Instant::now();
+        app.state.apply(idk_shared::protocol::ServerMsg::Welcome { id: 1, name: "bob".into(), seed: 1 }, now);
+        app.state.apply(
+            idk_shared::protocol::ServerMsg::Entities(vec![idk_shared::protocol::EntityView {
+                id: 1,
+                pos: idk_shared::geo::Pos { x: 3, y: 4 },
+                facing: idk_shared::geo::Dir::South,
+                look: idk_shared::protocol::Look::Player { name: "bob".into(), color: 0 },
+            }]),
+            now,
+        );
+        app.incognito = true;
+        let draw_screen = |app: &App| {
+            let mut term = Terminal::new(TestBackend::new(120, 40)).unwrap();
+            term.draw(|f| draw(f, app)).unwrap();
+            term.backend().to_string()
+        };
+        assert!(!draw_screen(&app).contains("deps"));
+        app.state.inventory = vec![(Item::Wood, 12), (Item::Stone, 3)];
+        let screen = draw_screen(&app);
+        assert!(screen.contains("Ln 4, Col 3 | deps: wood=12 stone=3"), "{screen}");
+        assert!(screen.contains("users"), "{screen}");
     }
 }
