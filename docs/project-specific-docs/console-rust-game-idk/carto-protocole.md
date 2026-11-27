@@ -11,7 +11,7 @@
 | 110-112 | Points non vérifiés |
 # Protocole client-serveur
 
-> Vérifié le 2026-11-25 depuis `crates/shared/src/protocol.rs`, `crates/shared/src/net.rs`, `crates/server/src/net.rs`, `crates/server/src/game.rs`, `crates/client/src/net.rs`, `crates/client/src/state.rs`.
+> Vérifié le 2026-11-27 depuis `crates/shared/src/protocol.rs`, `crates/shared/src/net.rs`, `crates/server/src/net.rs`, `crates/server/src/game.rs`, `crates/client/src/net.rs`, `crates/client/src/state.rs`.
 
 Un seul socket TCP par client, messages typés dans les deux sens. Les types vivent dans [shared](shared/vue-ensemble.md) ; le serveur et le client ne partagent rien d'autre.
 
@@ -29,7 +29,7 @@ Définis dans `crates/shared/src/protocol.rs`.
 | `Move(Dir)` | avance d'une tuile, ou tourne seulement si bloqué |
 | `Interact(Dir)` | caresse un animal, salue un joueur, ou décrit la tuile visée |
 | `Build(Dir)` / `Break(Dir)` | pose un mur / casse la tuile adjacente |
-| `Chat(String)` | message public (nettoyé côté serveur : caractères cachés supprimés (`strip_hidden`, ZWJ conservé), espaces des bords retirés, 240 caractères max, ignoré s'il n'a aucun caractère visible : ni blanc, ni caché, ni marque combinante (`has_visible_char`)) |
+| `Chat(String)` | message public, ou commande si le texte commence par `/` (jamais diffusée, voir [carto serveur](server/carto-architecture.md), section « Commandes de chat ») ; nettoyé côté serveur : caractères cachés supprimés (`strip_hidden`, ZWJ conservé), espaces des bords retirés, 240 caractères max, ignoré s'il n'a aucun caractère visible : ni blanc, ni caché, ni marque combinante (`has_visible_char`) |
 | `Ping` | keepalive toutes les 5 s ; ignoré par `Game`, il sert à réarmer le délai de lecture du serveur |
 
 | `ServerMsg` | Rôle |
