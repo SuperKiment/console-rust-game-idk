@@ -41,6 +41,13 @@ mod tests {
     }
 
     #[test]
+    fn flowers_drop_flower() {
+        let def = crate::content::Tile::Flowers.def();
+        assert_eq!(def.drops, Some(Item::Flower));
+        assert!(def.walkable, "les fleurs restent marchables");
+    }
+
+    #[test]
     fn item_names_are_unique() {
         for (i, a) in ITEMS.iter().enumerate() {
             assert!(!a.name.is_empty(), "objet sans nom : {:?}", a.glyph);
