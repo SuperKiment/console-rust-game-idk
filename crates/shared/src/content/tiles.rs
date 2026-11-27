@@ -13,6 +13,8 @@ pub struct TileDef {
     pub breaks_into: Option<Tile>,
     /// Item given to the player who breaks it (`None` = nothing).
     pub drops: Option<Item>,
+    /// Objects consumed to build it (empty = cannot be built).
+    pub cost: &'static [(Item, u16)],
     /// Rendered with box-drawing lines joined to neighbouring tiles of the same kind.
     pub connects: bool,
 }
@@ -26,6 +28,7 @@ const GROUND: TileDef = TileDef {
     walkable: true,
     breaks_into: None,
     drops: None,
+    cost: &[],
     connects: false,
 };
 
@@ -48,7 +51,7 @@ content_table! {
         Pine => TileDef { name: "pine", glyph: glyph('A', '♠', "🌲"), fg: Rgb(40, 130, 90), breaks_into: Some(Tile::Grass), drops: Some(Item::Wood), ..OBSTACLE },
         Cactus => TileDef { name: "cactus", glyph: glyph('!', '¥', "🌵"), fg: Rgb(110, 180, 80), breaks_into: Some(Tile::Sand), drops: Some(Item::Fiber), ..OBSTACLE },
         Rock => TileDef { name: "rock", glyph: glyph('^', '▲', "▲▲"), fg: Rgb(160, 150, 140), bg: Some(Rgb(40, 38, 36)), breaks_into: Some(Tile::Gravel), drops: Some(Item::Stone), ..OBSTACLE },
-        Wall => TileDef { name: "wall", glyph: glyph('#', '#', "##"), fg: Rgb(200, 190, 170), bg: Some(Rgb(48, 44, 40)), drops: Some(Item::Stone), connects: true, ..OBSTACLE },
+        Wall => TileDef { name: "wall", glyph: glyph('#', '#', "##"), fg: Rgb(200, 190, 170), bg: Some(Rgb(48, 44, 40)), drops: Some(Item::Stone), cost: &[(Item::Stone, 1)], connects: true, ..OBSTACLE },
     }
 }
 

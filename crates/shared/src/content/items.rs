@@ -32,6 +32,15 @@ mod tests {
     }
 
     #[test]
+    fn buildable_tiles_are_breakable() {
+        for t in TILES {
+            if !t.cost.is_empty() {
+                assert!(t.breaks_into.is_some(), "{} se construit mais ne se casse pas", t.name);
+            }
+        }
+    }
+
+    #[test]
     fn item_names_are_unique() {
         for (i, a) in ITEMS.iter().enumerate() {
             assert!(!a.name.is_empty(), "objet sans nom : {:?}", a.glyph);

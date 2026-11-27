@@ -69,12 +69,12 @@ async fn join_receive_world_and_build() {
     .await;
     assert_eq!(chunks, 49, "7x7 chunks streamed around the player");
 
-    // Building in front of the player is seen as a tile change (unless the spot is blocked).
+    // Building in front of the player is seen as a tile change (unless blocked, or no stone in the fresh bag).
     w.send(&ClientMsg::Build(Dir::East)).await.unwrap();
     let target = start.step(Dir::East);
     let built = wait_for(&mut r, |m| match m {
         ServerMsg::TileChanged { pos, tile } if pos == target => Some(Some(tile)),
-        ServerMsg::Log(l) if l.text.contains("can't build") => Some(None),
+        ServerMsg::Log(l) if l.text.contains("can't build") || l.text.contains("You need") => Some(None),
         _ => None,
     })
     .await;
