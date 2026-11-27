@@ -117,7 +117,11 @@ impl GameState {
 
     pub fn push_log(&mut self, line: LogLine) {
         let color = match &line.kind {
-            LogKind::Chat { from } => self.online.iter().find(|(n, _)| n == from).map_or(0, |(_, c)| *c),
+            // Message privé : `from` = "auteur -> destinataire", la couleur est celle de l'auteur.
+            LogKind::Chat { from } => {
+                let author = from.split(" -> ").next().unwrap_or(from);
+                self.online.iter().find(|(n, _)| n == author).map_or(0, |(_, c)| *c)
+            }
             _ => 0,
         };
         self.log.push_back(LogEntry { time: unix_now(), line, color });
@@ -207,6 +211,13 @@ mod tests {
         s.apply(ServerMsg::Online(vec![("bob".into(), 3)]), now);
         s.apply(ServerMsg::Log(LogLine::new(LogKind::Chat { from: "bob".into() }, "hi")), now);
         s.apply(ServerMsg::Online(vec![]), now);
+        assert_eq!(s.log.back().unwrap().color, 3);
+    }
+
+    #[test]
+    fn private_message_uses_author_color() {
+        let mut s = GameState { online: vec![("alice".into(), 0), ("bob".into(), 3)], ..Default::default() };
+        s.push_log(LogLine::new(LogKind::Chat { from: "bob -> alice".into() }, "psst"));
         assert_eq!(s.log.back().unwrap().color, 3);
     }
 
