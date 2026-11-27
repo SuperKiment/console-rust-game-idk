@@ -274,7 +274,7 @@ impl Game {
     fn handle(&mut self, conn: ConnId, msg: ClientMsg, now: Instant) {
         // Une action lit la position du joueur : un déplacement en attente (cooldown) reçu avant
         // elle est appliqué d'abord, pour respecter l'ordre d'envoi du client.
-        if matches!(msg, ClientMsg::Interact(_) | ClientMsg::Build(_) | ClientMsg::Break(_))
+        if matches!(msg, ClientMsg::Interact(_) | ClientMsg::Build(..) | ClientMsg::Break(_))
             && let Some(dir) = self.players.get(&conn).and_then(|p| p.pending_move)
         {
             self.try_move(conn, dir, now);
@@ -296,10 +296,10 @@ impl Game {
                 let target = p.pos.step(dir);
                 self.interact(conn, target);
             }
-            ClientMsg::Build(dir) => {
+            ClientMsg::Build(dir, tile) => {
                 p.facing = dir;
                 let target = p.pos.step(dir);
-                self.build(conn, target);
+                self.build(conn, target, tile);
             }
             ClientMsg::Break(dir) => {
                 p.facing = dir;
@@ -353,7 +353,13 @@ impl Game {
         }
     }
 
-    fn build(&mut self, conn: ConnId, target: Pos) {
+    fn build(&mut self, conn: ConnId, target: Pos, tile: Tile) {
+        let cost = tile.def().cost;
+        // Coût vide = tuile non constructible.
+        if cost.is_empty() {
+            self.tell(conn, LogKind::Info, "You can't build that.");
+            return;
+        }
         let blocked = !self.world.tile(target).def().walkable
             || self.animal_at(target).is_some()
             || self.players.values().any(|p| p.pos == target);
@@ -361,10 +367,9 @@ impl Game {
             self.tell(conn, LogKind::Info, "You can't build there.");
             return;
         }
-        let cost = Tile::BUILT.def().cost;
         let Some(player) = self.players.get_mut(&conn) else { return };
         if remove_items(&mut player.inventory, cost) {
-            self.set_tile(target, Tile::BUILT);
+            self.set_tile(target, tile);
             self.send_inventory(conn);
         } else {
             let list: Vec<String> = cost.iter().map(|(item, n)| format!("{n} {}", item.def().name)).collect();
@@ -645,9 +650,9 @@ pub(crate) mod tests {
         let ms = Duration::from_millis;
         g.event(Event::Msg(1, ClientMsg::Move(Dir::East)), now);
         g.event(Event::Msg(1, ClientMsg::Move(Dir::East)), now + ms(10));
-        g.event(Event::Msg(1, ClientMsg::Build(Dir::East)), now + ms(20));
+        g.event(Event::Msg(1, ClientMsg::Build(Dir::East, Tile::Wall)), now + ms(20));
         assert_eq!(g.players[&1].pos, Pos::new(o.x + 2, o.y));
-        assert_eq!(g.world.tile(Pos::new(o.x + 3, o.y)), Tile::BUILT);
+        assert_eq!(g.world.tile(Pos::new(o.x + 3, o.y)), Tile::Wall);
         assert_eq!(g.world.tile(Pos::new(o.x + 2, o.y)), Tile::Grass);
         assert_eq!(g.players[&1].pending_move, None);
     }
@@ -813,7 +818,7 @@ pub(crate) mod tests {
         join(&mut g, 1, "alice", now);
         let pos = g.players[&1].pos;
         g.event(Event::Leave(1), now);
-        g.world.set_tile(pos, Tile::BUILT);
+        g.world.set_tile(pos, Tile::Wall);
         join(&mut g, 2, "alice", now);
         let back = g.players[&2].pos;
         assert_ne!(back, pos);
@@ -908,11 +913,27 @@ pub(crate) mod tests {
         g.clear_animals();
         let o = grass_field(&mut g);
         drain(&mut rx);
-        g.event(Event::Msg(1, ClientMsg::Build(Dir::East)), now);
+        g.event(Event::Msg(1, ClientMsg::Build(Dir::East, Tile::Wall)), now);
         assert_eq!(g.world.tile(Pos::new(o.x + 1, o.y)), Tile::Grass);
         assert!(g.players[&1].inventory.is_empty());
         let msgs = drain(&mut rx);
         assert!(format!("{msgs:?}").contains("You need 1 stone."), "{msgs:?}");
+    }
+
+    #[test]
+    fn build_refuses_tile_without_cost() {
+        let now = Instant::now();
+        let mut g = Game::new(World::new(5));
+        let mut rx = join_rx(&mut g, 1, "alice", now);
+        g.clear_animals();
+        g.players.get_mut(&1).unwrap().inventory = vec![(Item::Stone, 2)];
+        let o = grass_field(&mut g);
+        g.world.set_tile(Pos::new(o.x + 1, o.y), Tile::Sand);
+        drain(&mut rx);
+        g.event(Event::Msg(1, ClientMsg::Build(Dir::East, Tile::Grass)), now);
+        assert_eq!(g.world.tile(Pos::new(o.x + 1, o.y)), Tile::Sand);
+        assert_eq!(g.players[&1].inventory, vec![(Item::Stone, 2)]);
+        assert!(format!("{:?}", drain(&mut rx)).contains("You can't build that."));
     }
 
     #[test]
@@ -924,8 +945,8 @@ pub(crate) mod tests {
         g.players.get_mut(&1).unwrap().inventory = vec![(Item::Stone, 2)];
         let o = grass_field(&mut g);
         drain(&mut rx);
-        g.event(Event::Msg(1, ClientMsg::Build(Dir::East)), now);
-        assert_eq!(g.world.tile(Pos::new(o.x + 1, o.y)), Tile::BUILT);
+        g.event(Event::Msg(1, ClientMsg::Build(Dir::East, Tile::Wall)), now);
+        assert_eq!(g.world.tile(Pos::new(o.x + 1, o.y)), Tile::Wall);
         assert_eq!(g.players[&1].inventory, vec![(Item::Stone, 1)]);
         assert!(drain(&mut rx).contains(&ServerMsg::Inventory(vec![(Item::Stone, 1)])));
     }
@@ -976,7 +997,7 @@ pub(crate) mod tests {
         let now = Instant::now();
         let mut g = Game::new(World::new(5));
         let spawn = g.world.spawn_point();
-        g.world.set_tile(spawn, Tile::BUILT);
+        g.world.set_tile(spawn, Tile::Wall);
         join(&mut g, 1, "bob", now);
         let pos = g.players[&1].pos;
         assert_ne!(pos, spawn);

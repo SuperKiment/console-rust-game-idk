@@ -277,7 +277,7 @@ mod tests {
         let (mut g, mut rxs) = setup();
         let t = g.players[&2].pos;
         for d in Dir::ALL {
-            g.world.set_tile(t.step(d), Tile::BUILT);
+            g.world.set_tile(t.step(d), Tile::Wall);
         }
         let far = Pos::new(t.x + 200, t.y);
         g.players.get_mut(&1).unwrap().pos = far;

@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::content::{Biome, Effect, Item, Species, Tile};
 use crate::geo::{CHUNK_AREA, ChunkPos, Dir, Pos};
 
-pub const PROTOCOL_VERSION: u32 = 3;
+pub const PROTOCOL_VERSION: u32 = 4;
 pub const DEFAULT_PORT: u16 = 7777;
 /// Radius (in chunks) of the area the server streams around each player.
 pub const VIEW_CHUNKS: i32 = 3;
@@ -97,8 +97,8 @@ pub enum ClientMsg {
     Move(Dir),
     /// Pet / talk to whatever stands on the adjacent tile.
     Interact(Dir),
-    /// Place a wall on the adjacent tile.
-    Build(Dir),
+    /// Build the given tile on the adjacent tile (refused if it has no build cost).
+    Build(Dir, Tile),
     /// Break the adjacent tile.
     Break(Dir),
     Chat(String),

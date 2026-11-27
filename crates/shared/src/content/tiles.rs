@@ -54,8 +54,3 @@ content_table! {
         Wall => TileDef { name: "wall", glyph: glyph('#', '#', "##"), fg: Rgb(200, 190, 170), bg: Some(Rgb(48, 44, 40)), drops: Some(Item::Stone), cost: &[(Item::Stone, 1)], connects: true, ..OBSTACLE },
     }
 }
-
-impl Tile {
-    /// Tile placed by the "build" action.
-    pub const BUILT: Tile = Tile::Wall;
-}
