@@ -12,7 +12,7 @@ pub struct Ai {
     pub flee_radius: i32,
     /// Walks toward players closer than this (0 = indifferent).
     pub curious_radius: i32,
-    /// Petting it makes it follow the player (petting again releases it).
+    /// Petting it makes it follow the player (the owner petting again toggles follow / stay; `/release` frees it).
     pub tameable: bool,
     /// Probability per step of making an ambient sound.
     pub sound_chance: f32,

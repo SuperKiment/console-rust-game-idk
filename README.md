@@ -65,6 +65,7 @@ Un message qui commence par `/` est une commande (réponse visible par toi seul,
 | `/me <action>` | action visible de tous : `* alice <action>` |
 | `/msg <nom> <texte>` | message privé (le nom peut contenir des espaces) |
 | `/tp <nom>` | te téléporte à côté du joueur (nom entier, casse ignorée ; refusé si aucune tuile libre autour) |
+| `/release` | libère l'animal apprivoisé que tu regardes (le tien uniquement) ; caresser son animal bascule suit / reste |
 
 ## Config client
 

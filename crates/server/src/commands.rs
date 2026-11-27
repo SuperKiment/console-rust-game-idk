@@ -1,4 +1,4 @@
-//! Commandes de chat (`/help`, `/who`, `/me`, `/msg`, `/tp`) : un message commençant par `/` n'est pas diffusé.
+//! Commandes de chat (`/help`, `/who`, `/me`, `/msg`, `/tp`, `/release`) : un message commençant par `/` n'est pas diffusé.
 //! Ajouter une commande = une entrée dans [`COMMANDS`] et sa fonction.
 
 use idk_shared::content::Effect;
@@ -22,6 +22,7 @@ pub const COMMANDS: &[Command] = &[
     Command { name: "me", usage: "me <action>", help: "describe an action to everyone", run: me },
     Command { name: "msg", usage: "msg <name> <text>", help: "private message", run: msg },
     Command { name: "tp", usage: "tp <name>", help: "teleport next to a player", run: tp },
+    Command { name: "release", usage: "release", help: "set free the animal you face", run: release },
 ];
 
 /// Exécute une commande. `line` est le texte du chat sans le `/` initial.
@@ -128,6 +129,22 @@ fn tp(game: &mut Game, conn: ConnId, args: &str) {
     game.effect(spot, Effect::Dust);
     game.tell(conn, LogKind::Info, format!("You teleport to {to_name}."));
     game.tell(to_conn, LogKind::Info, format!("{from} teleported next to you."));
+}
+
+fn release(game: &mut Game, conn: ConnId, _args: &str) {
+    let Some((name, target)) = game.players.get(&conn).map(|p| (p.name.clone(), p.pos.step(p.facing))) else {
+        return;
+    };
+    let mine =
+        game.animal_at(target).filter(|id| game.animals()[id].tamed_by.as_deref() == Some(name.as_str()));
+    let Some(id) = mine else {
+        return game.tell(conn, LogKind::Info, "Face one of your animals.");
+    };
+    let a = game.animal_mut(id);
+    a.tamed_by = None;
+    a.staying = false;
+    let species = a.species.def().name;
+    game.tell(conn, LogKind::Info, format!("The {species} is free now."));
 }
 
 /// Secteur (N, NE, E, SE, S, SW, W, NW) de `to` vu depuis `from`. `y` croît vers le sud.
@@ -282,6 +299,41 @@ mod tests {
         assert_eq!(logs(&mut rxs[0])[0].text, "Usage: /tp <name>");
         assert_eq!(g.players[&1].pos, before);
         assert!(logs(&mut rxs[1]).is_empty());
+    }
+
+    #[test]
+    fn release_frees_faced_animal_only_if_yours() {
+        use idk_shared::content::Species;
+        let (mut g, mut rxs) = setup();
+        let now = Instant::now();
+        g.clear_animals();
+        let p = g.players[&1].pos;
+        let facing = g.players[&1].facing;
+        let spot = p.step(facing);
+        let dog = g.insert_animal(Species::Dog, spot, Some("alice".into()), now).unwrap();
+        g.animal_mut(dog).staying = true;
+        run(&mut g, 2, "release");
+        assert_eq!(logs(&mut rxs[1])[0].text, "Face one of your animals.");
+        assert_eq!(g.animals()[&dog].tamed_by.as_deref(), Some("alice"));
+        run(&mut g, 1, "release");
+        assert_eq!(logs(&mut rxs[0])[0].text, "The dog is free now.");
+        assert_eq!(g.animals()[&dog].tamed_by, None);
+        assert!(!g.animals()[&dog].staying);
+        run(&mut g, 1, "release");
+        assert_eq!(logs(&mut rxs[0])[0].text, "Face one of your animals.");
+    }
+
+    #[test]
+    fn release_refused_on_other_players_animal() {
+        use idk_shared::content::Species;
+        let (mut g, mut rxs) = setup();
+        let now = Instant::now();
+        g.clear_animals();
+        let spot = g.players[&1].pos.step(g.players[&1].facing);
+        let dog = g.insert_animal(Species::Dog, spot, Some("carol".into()), now).unwrap();
+        run(&mut g, 1, "release");
+        assert_eq!(logs(&mut rxs[0])[0].text, "Face one of your animals.");
+        assert_eq!(g.animals()[&dog].tamed_by.as_deref(), Some("carol"));
     }
 
     #[test]
