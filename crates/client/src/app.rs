@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 
 use crossterm::event::{Event, EventStream, KeyCode, KeyEventKind};
 use futures::StreamExt;
+use idk_shared::content::Tile;
 use idk_shared::protocol::{ClientMsg, LogKind, LogLine, MAX_CHAT};
 use ratatui::DefaultTerminal;
 use tokio::sync::mpsc::{self, UnboundedSender};
@@ -303,7 +304,7 @@ impl App {
                 self.send(ClientMsg::Move(dir));
             }
             Action::Interact => self.send(ClientMsg::Interact(facing)),
-            Action::Build => self.send(ClientMsg::Build(facing)),
+            Action::Build => self.send(ClientMsg::Build(facing, Tile::Wall)),
             Action::Break => self.send(ClientMsg::Break(facing)),
             Action::Chat if !matches!(self.status, Status::Online) => {
                 self.state.push_log(LogLine::new(LogKind::System, NOT_CONNECTED));
@@ -624,7 +625,7 @@ mod tests {
         app.act(Action::Build);
         assert_eq!(app.sent.try_recv().unwrap(), ClientMsg::Move(Dir::East));
         assert_eq!(app.sent.try_recv().unwrap(), ClientMsg::Move(Dir::North));
-        assert_eq!(app.sent.try_recv().unwrap(), ClientMsg::Build(Dir::North));
+        assert_eq!(app.sent.try_recv().unwrap(), ClientMsg::Build(Dir::North, Tile::Wall));
     }
 
     #[test]

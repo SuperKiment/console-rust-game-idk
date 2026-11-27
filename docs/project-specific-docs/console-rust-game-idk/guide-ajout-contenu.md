@@ -34,7 +34,7 @@ Nouveau biome : une ligne dans `BIOMES`. Les biomes terrestres partagent la band
 
 Nouvel objet : une ligne dans `ITEMS` (nom unique, glyphe, couleur), à la fin de la table. Pour qu'une tuile le donne quand on la casse, mettre `drops: Some(Item::X)` sur sa ligne de `TILES` : elle doit aussi avoir `breaks_into: Some(_)` (test `dropping_tiles_are_breakable`). Le serveur donne l'objet au joueur qui casse la tuile (`Game::break_tile`, `add_item`) et lui envoie son inventaire (`ServerMsg::Inventory`).
 
-Tuile constructible : `cost: &[(Item::X, n)]` sur sa ligne de `TILES` (vide par défaut = non constructible). Elle doit aussi avoir `breaks_into: Some(_)` (test `buildable_tiles_are_breakable`). `Game::build` retire le coût du sac (`remove_items`, tout ou rien) avant de poser `Tile::BUILT`.
+Tuile constructible : `cost: &[(Item::X, n)]` sur sa ligne de `TILES` (vide par défaut = non constructible). Elle doit aussi avoir `breaks_into: Some(_)` (test `buildable_tiles_are_breakable`). `Game::build` retire le coût du sac (`remove_items`, tout ou rien) avant de poser la tuile demandée par `ClientMsg::Build(dir, tile)` ; une tuile sans coût est refusée.
 
 ## Tests de non-régression
 
