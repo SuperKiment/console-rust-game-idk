@@ -11,6 +11,7 @@ use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style, Stylize};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, Paragraph, Wrap};
+use unicode_segmentation::UnicodeSegmentation;
 
 use super::map::{self, MapStyle};
 use super::theme::{NORMAL, Theme};
@@ -112,9 +113,13 @@ pub fn draw(f: &mut Frame, app: &App) {
     };
     f.render_widget(Paragraph::new(me_lines).block(block("you")), me_area);
 
-    let online_lines: Vec<Line> = s
+    // Lignes dispo = hauteur moins les 2 bordures ; si ça déborde, la dernière devient `+K more`.
+    let avail = online_area.height.saturating_sub(2) as usize;
+    let shown = if s.online.len() > avail { avail.saturating_sub(1) } else { s.online.len() };
+    let mut online_lines: Vec<Line> = s
         .online
         .iter()
+        .take(shown)
         .map(|(name, c)| {
             let color = PLAYER_COLORS[*c as usize % PLAYER_COLORS.len()];
             let mut style = Style::new().fg(paint(color));
@@ -124,6 +129,9 @@ pub fn draw(f: &mut Frame, app: &App) {
             Line::from(vec![Span::styled("@ ", style), Span::styled(name.clone(), style)])
         })
         .collect();
+    if s.online.len() > shown && avail > 0 {
+        online_lines.push(Line::styled(format!("+{} more", s.online.len() - shown), dim));
+    }
     if show_online {
         f.render_widget(Paragraph::new(online_lines).block(block("online")), online_area);
     }
@@ -269,9 +277,64 @@ fn draw_log(f: &mut Frame, app: &App, t: &Theme, area: Rect, block: Block) {
 /// Affiche `lines` avec retour à la ligne, puis défilement pour garder les lignes les plus récentes
 /// visibles. Commun au log du layout normal et à celui du layout incognito.
 pub(super) fn render_tail(f: &mut Frame, lines: Vec<Line>, area: Rect) {
+    // Pas de bloc sur ce `Paragraph` : `area.width` est la largeur réellement utilisée.
+    let lines = prewrap_long_words(lines, area.width as usize);
     let text = Paragraph::new(lines).wrap(Wrap { trim: false });
     let hidden = text.line_count(area.width).saturating_sub(area.height as usize);
     f.render_widget(text.scroll((hidden.min(u16::MAX as usize) as u16, 0)), area);
+}
+
+/// Le `Wrap` de ratatui renvoie à la ligne un mot plus large que la zone avant de le couper, ce qui
+/// laisse le début de la ligne seul. Les lignes contenant un tel mot sont donc découpées ici par
+/// colonnes (par graphème, styles conservés) ; les autres passent inchangées.
+fn prewrap_long_words(lines: Vec<Line<'_>>, width: usize) -> Vec<Line<'_>> {
+    if width == 0 {
+        return lines;
+    }
+    let has_long_word = |line: &Line| {
+        let mut run = 0;
+        for span in &line.spans {
+            for g in span.content.graphemes(true) {
+                if g.chars().all(char::is_whitespace) {
+                    run = 0;
+                } else {
+                    run += Line::from(g).width();
+                    if run > width {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    };
+    let mut out = Vec::with_capacity(lines.len());
+    for line in lines {
+        if !has_long_word(&line) {
+            out.push(line);
+            continue;
+        }
+        let mut row: Vec<Span> = Vec::new();
+        let mut used = 0;
+        for span in &line.spans {
+            for g in span.content.graphemes(true) {
+                let w = Line::from(g).width();
+                // Un graphème large qui ne tient pas dans la colonne restante passe à la ligne suivante.
+                if used + w > width && used > 0 {
+                    out.push(Line::from(std::mem::take(&mut row)).style(line.style));
+                    used = 0;
+                }
+                match row.last_mut() {
+                    Some(last) if last.style == span.style => last.content.to_mut().push_str(g),
+                    _ => row.push(Span::styled(g.to_string(), span.style)),
+                }
+                used += w;
+            }
+        }
+        if !row.is_empty() {
+            out.push(Line::from(row).style(line.style));
+        }
+    }
+    out
 }
 
 /// Centered popup while not connected.
@@ -359,6 +422,50 @@ mod tests {
         let s = screen(&app);
         assert!(s.contains("FINMSG"), "{s}");
         assert!(s.contains("derniere"), "{s}");
+    }
+
+    #[test]
+    fn prewrap_cuts_long_words_by_grapheme_and_keeps_styles() {
+        let red = Style::new().fg(ratatui::style::Color::Red);
+        let line = Line::from(vec![Span::raw("ab "), Span::styled("日".repeat(5), red)]);
+        let out = prewrap_long_words(vec![Line::from("court mot"), line], 5);
+        assert_eq!(out.len(), 1 + 3);
+        assert_eq!(out[0].to_string(), "court mot");
+        // `日` fait 2 colonnes : 2 par ligne dans 5 colonnes, jamais coupé en deux.
+        assert_eq!(out[1].to_string(), "ab 日");
+        assert_eq!(out[2].to_string(), "日日");
+        assert_eq!(out[3].to_string(), "日日");
+        assert!(out[1..].iter().all(|l| l.width() <= 5));
+        assert_eq!(out[2].spans[0].style, red);
+    }
+
+    #[test]
+    fn prewrap_survives_graphemes_wider_than_area() {
+        let out = prewrap_long_words(vec![Line::from("日日")], 1);
+        assert_eq!(out.len(), 2);
+    }
+
+    #[test]
+    fn long_word_chat_starts_on_the_name_line() {
+        use idk_shared::protocol::LogLine;
+        let mut app = App::for_test(Status::Online);
+        let kind = LogKind::Chat { from: "alice".into() };
+        let text = format!("{}FINMSG", "A".repeat(300));
+        app.state.log.push_back(crate::state::LogEntry { time: 0, line: LogLine { kind, text }, color: 0 });
+        let s = screen_at(&app, 120, 40);
+        let row = s.lines().find(|l| l.contains("<alice>")).expect(&s);
+        assert!(row.contains("<alice> AAAA"), "{s}");
+        assert!(s.contains("FINMSG"), "{s}");
+    }
+
+    #[test]
+    fn online_panel_says_how_many_are_hidden() {
+        let mut app = App::for_test(Status::Online);
+        for i in 0..8 {
+            app.state.online.push((format!("p{i}"), i));
+        }
+        let s = screen_at(&app, 120, 40);
+        assert!(s.contains("more"), "{s}");
     }
 
     /// App connectée avec un joueur au centre d'un chunk de plaine.

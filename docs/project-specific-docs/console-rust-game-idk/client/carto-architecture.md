@@ -6,11 +6,11 @@
 | 55-71 | Boucle principale |
 | 72-93 | Connexion et reconnexion |
 | 94-110 | GameState |
-| 111-127 | Layouts |
-| 128-149 | Chaîne glyphes et couleurs |
-| 150-171 | Assistant de configuration |
-| 172-177 | Table BINDINGS |
-| 178-182 | Docs liées |
+| 111-129 | Layouts |
+| 130-151 | Chaîne glyphes et couleurs |
+| 152-173 | Assistant de configuration |
+| 174-179 | Table BINDINGS |
+| 180-184 | Docs liées |
 # Client : architecture
 
 > Vérifié le 2026-11-26 depuis `crates/client/src/` (`main.rs`, `app.rs`, `net.rs`, `state.rs`, `input.rs`, `config.rs`, `setup.rs`, `ui/`). Fiche : [vue-ensemble.md](vue-ensemble.md).
@@ -120,6 +120,8 @@ stateDiagram-v2
 | Barre d'état | popup centrée si non connecté | `NORMAL` / `INSERT` façon vim, `Ln y, Col x`, chat saisi comme ligne de commande `:`, `N users` et heure locale `HH:MM` à droite ; l'état de connexion s'affiche dans la barre (pas de popup) |
 | Indicateur de défilement | titre du bloc `log` suffixé de ` ↓N` (` vN` en ASCII) quand `log_scroll` = N > 0 | en-tête ` OUTPUT (N more)` |
 | Aide des touches | panneau `keys`, généré depuis `BINDINGS` ; F1 ouvre l'écran d'aide complet (`ui/help.rs`) | aucune |
+
+Journal : `game::render_tail` pré-replie par graphème (`prewrap_long_words`) les lignes contenant un mot plus large que la zone, car le `Wrap` de ratatui renverrait ce mot entier à la ligne suivante. Panneau `online` : si les noms dépassent la hauteur utile (bordures retirées), les derniers sont remplacés par une ligne grisée `+K more`.
 
 Fuseau : `state::utc_offset` (via `chrono`, lu une fois ; en docker, `/etc/localtime` est monté par `docker-compose.yml`). Le jeu de glyphes de la config ne change que les symboles du chrome (voir « Chaîne glyphes et couleurs »).
 
