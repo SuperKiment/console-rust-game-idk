@@ -1,7 +1,7 @@
 //! Écran d'aide (F1) : popup plein écran avec toutes les touches et la légende des glyphes.
 
 use crossterm::event::KeyCode;
-use idk_shared::content::{Glyph, PLAYER_COLORS, PLAYER_GLYPH, Rgb, Species, Tile};
+use idk_shared::content::{PLAYER_COLORS, PLAYER_GLYPH, Rgb, Species, Tile};
 use ratatui::Frame;
 use ratatui::layout::Margin;
 use ratatui::style::Style;
@@ -66,34 +66,37 @@ fn lines(app: &App, t: &Theme) -> Vec<Line<'static>> {
     out.push(heading("tiles"));
     for tile in Tile::ALL {
         let def = tile.def();
-        out.push(legend(g, &def.glyph, def.fg, def.name, t, &paint));
+        let mut buf = [0; 8];
+        // Les tuiles `connects` sont dessinées par `wall` sur la carte : on montre le mur isolé.
+        let symbol = if def.connects { g.wall(0, &mut buf) } else { g.symbol(&def.glyph, &mut buf) };
+        out.push(legend(g, symbol, def.fg, def.name, t, &paint));
     }
 
     out.push(Line::raw(""));
     out.push(heading("animals"));
     for species in Species::ALL {
         let def = species.def();
-        out.push(legend(g, &def.glyph, def.fg, def.name, t, &paint));
+        let mut buf = [0; 8];
+        out.push(legend(g, g.symbol(&def.glyph, &mut buf), def.fg, def.name, t, &paint));
     }
     // Couleur du joueur : première de la palette (chaque joueur a la sienne, hachée du nom).
-    out.push(legend(g, &PLAYER_GLYPH, PLAYER_COLORS[0], "player", t, &paint));
+    let mut buf = [0; 8];
+    out.push(legend(g, g.symbol(&PLAYER_GLYPH, &mut buf), PLAYER_COLORS[0], "player", t, &paint));
     out
 }
 
-/// Ligne de légende : glyphe coloré (colonne de 3 cellules) puis nom.
+/// Ligne de légende : symbole coloré (colonne de 3 cellules) puis nom.
 fn legend(
     g: GlyphSet,
-    glyph: &Glyph,
+    symbol: &str,
     fg: Rgb,
     name: &str,
     t: &Theme,
     paint: &impl Fn(Rgb) -> ratatui::style::Color,
 ) -> Line<'static> {
-    let mut buf = [0; 8];
-    let symbol = g.symbol(glyph, &mut buf).to_string();
     let pad = " ".repeat(3 - g.tile_width() as usize);
     Line::from(vec![
-        Span::styled(symbol, Style::new().fg(paint(fg))),
+        Span::styled(symbol.to_string(), Style::new().fg(paint(fg))),
         Span::raw(pad),
         Span::styled(name.to_string(), Style::new().fg(paint(t.text))),
     ])
@@ -164,6 +167,17 @@ mod tests {
         assert!(s.contains("space") && s.contains("F1") && s.contains("pgup"), "{s}");
         assert!(s.contains("help — esc to close"), "{s}");
         assert!(s.contains("cow") && s.contains("tall grass") && s.contains("player"), "{s}");
+    }
+
+    #[test]
+    fn wall_legend_shows_isolated_wall() {
+        let wall_line = |glyphs| {
+            let s = screen(&help_app(glyphs), 100, 80);
+            s.lines().find(|l| l.contains("wall") && !l.contains("build")).unwrap_or_default().to_string()
+        };
+        let unicode = wall_line(GlyphSet::Unicode);
+        assert!(unicode.contains('■') && !unicode.contains('#'), "{unicode}");
+        assert!(wall_line(GlyphSet::Ascii).contains('#'));
     }
 
     #[test]
