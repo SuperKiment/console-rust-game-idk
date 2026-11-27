@@ -50,6 +50,8 @@ fn act(game: &mut Game, id: EntityId, players: &[(String, Pos)], now: Instant) {
     let mut delay = ai.step_ms;
 
     let intent = match (owner, nearest) {
+        // Reste demandé par le maître : aucun mouvement, ni errance ni téléportation.
+        _ if a.staying => None,
         (Some(o), _) if o.dist(pos) > TELEPORT_DIST => {
             teleport_near(game, id, o);
             None
@@ -122,7 +124,7 @@ fn teleport_near(game: &mut Game, id: EntityId, target: Pos) {
     }
 }
 
-/// A player pets an animal: a reaction, and tameable animals start (or stop) following them.
+/// A player pets an animal: a reaction; tameable animals start following them, and the owner's pets toggle follow / stay.
 pub fn pet(game: &mut Game, conn: ConnId, id: EntityId) {
     let me = game.players[&conn].name.clone();
     let a = &game.animals()[&id];
@@ -134,12 +136,22 @@ pub fn pet(game: &mut Game, conn: ConnId, id: EntityId) {
     if !def.ai.tameable {
         return;
     }
-    let (new_owner, msg) = match tamed_by {
-        Some(owner) if owner == me => (None, format!("The {} stops following you.", def.name)),
-        Some(owner) => (Some(owner.clone()), format!("The {} is loyal to {owner}.", def.name)),
-        None => (Some(me), format!("The {} will follow you now.", def.name)),
+    let msg = match tamed_by {
+        Some(owner) if owner == me => {
+            let a = game.animal_mut(id);
+            a.staying = !a.staying;
+            if a.staying {
+                format!("The {} stays here.", def.name)
+            } else {
+                format!("The {} follows you again.", def.name)
+            }
+        }
+        Some(owner) => format!("The {} is loyal to {owner}.", def.name),
+        None => {
+            game.animal_mut(id).tamed_by = Some(me);
+            format!("The {} will follow you now.", def.name)
+        }
     };
-    game.animal_mut(id).tamed_by = new_owner;
     game.tell(conn, LogKind::Info, msg);
 }
 
@@ -189,7 +201,38 @@ mod tests {
         g.assert_animal_index();
 
         pet(&mut g, 1, dog);
-        assert_eq!(g.animals()[&dog].tamed_by, None, "petting again releases it");
+        assert_eq!(g.animals()[&dog].tamed_by.as_deref(), Some("alice"), "petting again keeps the owner");
+        assert!(g.animals()[&dog].staying, "petting again makes it stay");
+    }
+
+    #[test]
+    fn staying_animal_does_not_move_until_petted_again() {
+        let (mut g, dog, _rx, now) = setup(Species::Dog, (1, 0));
+        pet(&mut g, 1, dog);
+        pet(&mut g, 1, dog);
+        assert!(g.animals()[&dog].staying);
+        // Maître très loin : ni errance ni téléportation.
+        let player = g.players[&1].pos;
+        let far = Pos::new(player.x + TELEPORT_DIST + 5, player.y);
+        g.move_animal(dog, far);
+        run(&mut g, now, 10);
+        assert_eq!(g.animals()[&dog].pos(), far);
+        g.assert_animal_index();
+
+        pet(&mut g, 1, dog);
+        assert!(!g.animals()[&dog].staying);
+        run(&mut g, now + Duration::from_secs(10), 2);
+        assert!(g.animals()[&dog].pos().dist(player) <= 1, "follows again (teleport)");
+    }
+
+    #[test]
+    fn staying_animal_near_owner_does_not_wander() {
+        let (mut g, dog, _rx, now) = setup(Species::Dog, (1, 0));
+        pet(&mut g, 1, dog);
+        pet(&mut g, 1, dog);
+        let pos = g.animals()[&dog].pos();
+        run(&mut g, now, 20);
+        assert_eq!(g.animals()[&dog].pos(), pos);
     }
 
     #[test]
