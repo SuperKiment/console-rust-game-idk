@@ -107,6 +107,8 @@ pub struct Animal {
     pub facing: Dir,
     /// Name of the player it follows.
     pub tamed_by: Option<String>,
+    /// Apprivoisé et prié de rester sur place (caresse du maître). Non sauvegardé : au redémarrage il suit de nouveau.
+    pub staying: bool,
     pub next_step: Instant,
 }
 
@@ -430,7 +432,10 @@ impl Game {
             return None;
         }
         let id = self.alloc_id();
-        self.animals.insert(id, Animal { id, species, pos, facing: Dir::South, tamed_by, next_step: now });
+        self.animals.insert(
+            id,
+            Animal { id, species, pos, facing: Dir::South, tamed_by, staying: false, next_step: now },
+        );
         self.animal_index.insert(pos, id);
         Some(id)
     }
