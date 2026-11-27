@@ -210,10 +210,12 @@ fn me_offline_lines(offline: bool, last: Option<Pos>, dim: Style, text: Style) -
 }
 
 fn plural(name: &str, n: usize) -> String {
-    match (n, name) {
-        (1, _) => name.to_string(),
-        (_, "sheep") => name.to_string(),
-        _ => format!("{name}s"),
+    if n == 1 || name == "sheep" {
+        name.to_string()
+    } else if ["x", "s", "sh", "ch"].iter().any(|e| name.ends_with(e)) {
+        format!("{name}es")
+    } else {
+        format!("{name}s")
     }
 }
 
@@ -307,6 +309,14 @@ mod tests {
     use super::*;
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
+
+    #[test]
+    fn plural_rules() {
+        assert_eq!(plural("fox", 2), "foxes");
+        assert_eq!(plural("sheep", 2), "sheep");
+        assert_eq!(plural("cat", 2), "cats");
+        assert_eq!(plural("fox", 1), "fox");
+    }
 
     #[test]
     fn long_status_reason_keeps_last_line() {
