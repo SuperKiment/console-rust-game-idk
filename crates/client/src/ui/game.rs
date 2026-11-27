@@ -68,10 +68,20 @@ pub fn draw(f: &mut Frame, app: &App) {
     map::render(f.buffer_mut(), inner, s, &style, Instant::now());
 
     // Side panels
-    // Priorité de place : you > keys (entier ou masqué) > online > nearby
+    // Priorité de place : you > bag > keys (entier ou masqué) > online > nearby
     let keys = BINDINGS.iter().filter(|b| b.help.is_some()).count() as u16;
     let keys_h = keys + 2;
-    let [me_area, rest] = Layout::vertical([Constraint::Length(ME_HEIGHT), Constraint::Min(0)]).areas(side);
+    let [me_area, below_me] =
+        Layout::vertical([Constraint::Length(ME_HEIGHT), Constraint::Min(0)]).areas(side);
+    // Sac entier ou masqué : une ligne par objet (ou `empty`), plus les 2 bordures.
+    let bag_h = s.inventory.len().max(1) as u16 + 2;
+    let show_bag = below_me.height >= bag_h;
+    let (bag_area, rest) = if show_bag {
+        let [b, r] = Layout::vertical([Constraint::Length(bag_h), Constraint::Min(0)]).areas(below_me);
+        (Some(b), r)
+    } else {
+        (None, below_me)
+    };
     let show_keys = rest.height >= keys_h;
     let (keys_area, lists) = if show_keys {
         let [k, l] = Layout::vertical([Constraint::Length(keys_h), Constraint::Min(0)]).areas(rest);
@@ -112,6 +122,12 @@ pub fn draw(f: &mut Frame, app: &App) {
         None => me_offline_lines(s.is_offline(), s.map_center(), dim, text),
     };
     f.render_widget(Paragraph::new(me_lines).block(block("you")), me_area);
+
+    if let Some(bag_area) = bag_area {
+        let inner_width = bag_area.width.saturating_sub(2) as usize;
+        let lines = bag_lines(app, t, inner_width);
+        f.render_widget(Paragraph::new(lines).block(block("bag")), bag_area);
+    }
 
     // Lignes dispo = hauteur moins les 2 bordures ; si ça déborde, la dernière devient `+K more`.
     let avail = online_area.height.saturating_sub(2) as usize;
@@ -215,6 +231,38 @@ fn me_offline_lines(offline: bool, last: Option<Pos>, dim: Style, text: Style) -
         ]));
     }
     lines
+}
+
+/// Lignes du panneau « bag » : glyphe, nom, puis compte aligné à droite dans `width` colonnes.
+fn bag_lines(app: &App, t: &Theme, width: usize) -> Vec<Line<'static>> {
+    let g = app.config.glyphs;
+    let paint = |c: Rgb| app.config.colors.paint(c);
+    let dim = Style::new().fg(paint(t.dim));
+    if app.state.inventory.is_empty() {
+        return vec![Line::styled("empty", dim)];
+    }
+    app.state
+        .inventory
+        .iter()
+        .map(|(item, n)| {
+            let def = item.def();
+            let mut buf = [0; 8];
+            let symbol = g.symbol(&def.glyph, &mut buf);
+            let count = format!("{}{n}", pick(g, "×", "x"));
+            // Largeur réelle (glyphes Wide sur 2 colonnes) pour aligner le compte à droite.
+            let used = Line::from(symbol).width()
+                + 1
+                + Line::from(def.name).width()
+                + Line::from(count.as_str()).width();
+            Line::from(vec![
+                Span::styled(symbol.to_string(), Style::new().fg(paint(def.fg))),
+                Span::raw(" "),
+                Span::styled(def.name, Style::new().fg(paint(t.text))),
+                Span::raw(" ".repeat(width.saturating_sub(used))),
+                Span::styled(count, dim),
+            ])
+        })
+        .collect()
 }
 
 fn plural(name: &str, n: usize) -> String {
@@ -521,10 +569,62 @@ mod tests {
     }
 
     #[test]
+    fn bag_panel_lists_items_with_counts() {
+        use idk_shared::content::Item;
+        let mut app = app_with_me();
+        app.state.inventory = vec![(Item::Wood, 12), (Item::Stone, 3)];
+        let s = screen_at(&app, 120, 40);
+        assert!(s.contains("bag") && s.contains("wood") && s.contains("12"), "{s}");
+        assert!(s.contains("stone") && s.contains("×3"), "{s}");
+        // Compte aligné à droite, dans la même ligne que le nom
+        let row = s.lines().find(|l| l.contains("wood")).expect(&s);
+        assert!(row.contains("×12"), "{row}");
+    }
+
+    #[test]
+    fn empty_bag_says_empty() {
+        let s = screen_at(&app_with_me(), 120, 40);
+        assert!(s.contains("bag") && s.contains("empty"), "{s}");
+    }
+
+    #[test]
+    fn bag_count_stays_aligned_in_wide_glyphs() {
+        use crate::config::GlyphSet;
+        use idk_shared::content::Item;
+        let mut app = app_with_me();
+        app.config.glyphs = GlyphSet::Wide;
+        app.state.inventory = vec![(Item::Wood, 12), (Item::Flower, 7)];
+        let width = |name: &str| {
+            let mut app = app_with_me();
+            app.config.glyphs = GlyphSet::Wide;
+            app.state.inventory = vec![(Item::Wood, 12), (Item::Flower, 7)];
+            let lines = bag_lines(&app, &NORMAL, 30);
+            lines.iter().find(|l| l.to_string().contains(name)).map(|l| l.width()).unwrap()
+        };
+        assert_eq!(width("wood"), 30);
+        assert_eq!(width("flower"), 30);
+        let s = screen_at(&app, 120, 40);
+        assert!(s.contains("12"), "{s}");
+    }
+
+    #[test]
+    fn bag_panel_survives_small_terminals() {
+        use idk_shared::content::Item;
+        let mut app = app_with_me();
+        app.state.inventory = Item::ALL.iter().map(|i| (*i, 5)).collect();
+        for (w, h) in [(80, 24), (60, 18), (52, 12)] {
+            let s = screen_at(&app, w, h);
+            assert!(s.contains("pos"), "{w}x{h}\n{s}");
+        }
+    }
+
+    #[test]
     fn ascii_glyphs_leave_no_unicode_in_chrome() {
         use crate::config::GlyphSet;
         // Connecté, chat ouvert, puis popup offline sur une autre app
         let mut app = app_with_me();
+        app.state.inventory =
+            vec![(idk_shared::content::Item::Wood, 12), (idk_shared::content::Item::Flower, 1)];
         app.config.glyphs = GlyphSet::Ascii;
         app.mode = Mode::Chat("salut".into());
         let s = screen_at(&app, 120, 40);
