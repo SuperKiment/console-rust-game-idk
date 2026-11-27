@@ -1,7 +1,7 @@
 //! Écran d'aide (F1) : popup plein écran avec toutes les touches et la légende des glyphes.
 
 use crossterm::event::KeyCode;
-use idk_shared::content::{PLAYER_COLORS, PLAYER_GLYPH, Rgb, Species, Tile};
+use idk_shared::content::{Item, PLAYER_COLORS, PLAYER_GLYPH, Rgb, Species, Tile};
 use ratatui::Frame;
 use ratatui::layout::Margin;
 use ratatui::style::Style;
@@ -39,7 +39,7 @@ pub fn draw(f: &mut Frame, app: &App) {
     f.render_widget(Paragraph::new(lines).block(block).scroll((scroll.min(max), 0)), popup);
 }
 
-/// Contenu complet de l'aide : touches, puis tuiles, puis animaux.
+/// Contenu complet de l'aide : touches, puis tuiles, puis animaux, puis objets.
 fn lines(app: &App, t: &Theme) -> Vec<Line<'static>> {
     let g = app.config.glyphs;
     let paint = |c: Rgb| app.config.colors.paint(c);
@@ -82,6 +82,14 @@ fn lines(app: &App, t: &Theme) -> Vec<Line<'static>> {
     // Couleur du joueur : première de la palette (chaque joueur a la sienne, hachée du nom).
     let mut buf = [0; 8];
     out.push(legend(g, g.symbol(&PLAYER_GLYPH, &mut buf), PLAYER_COLORS[0], "player", t, &paint));
+
+    out.push(Line::raw(""));
+    out.push(heading("items"));
+    for item in Item::ALL {
+        let def = item.def();
+        let mut buf = [0; 8];
+        out.push(legend(g, g.symbol(&def.glyph, &mut buf), def.fg, def.name, t, &paint));
+    }
     out
 }
 
@@ -167,6 +175,7 @@ mod tests {
         assert!(s.contains("space") && s.contains("F1") && s.contains("pgup"), "{s}");
         assert!(s.contains("help — esc to close"), "{s}");
         assert!(s.contains("cow") && s.contains("tall grass") && s.contains("player"), "{s}");
+        assert!(s.contains("items") && s.contains("wood") && s.contains("stone"), "{s}");
     }
 
     #[test]
@@ -209,7 +218,7 @@ mod tests {
         app.mode = Mode::Help { scroll: 999 };
         let s = screen(&app, 80, 24);
         // Tout en bas : dernière ligne de la légende visible, haut (section keys) masqué.
-        assert!(s.contains("player") && !s.contains("move north"), "{s}");
+        assert!(s.contains("flower") && !s.contains("move north"), "{s}");
         assert!(app.help_max_scroll.get() > 0);
     }
 }
