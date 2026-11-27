@@ -165,6 +165,13 @@ impl Game {
 
     fn join(&mut self, conn: ConnId, raw_name: &str, tx: Sender<ServerMsg>, now: Instant) {
         let name = idk_shared::protocol::clean_name(raw_name);
+        // Même nom à la casse près (bob / Bob) : refus, sinon /msg serait ambigu. La chute du tx ferme la connexion.
+        if let Some(other) =
+            self.players.values().find(|p| p.name != name && p.name.eq_ignore_ascii_case(&name))
+        {
+            let _ = tx.try_send(ServerMsg::Rejected(format!("name {} is already online", other.name)));
+            return;
+        }
         // Même nom déjà connecté (typiquement une session fantôme après coupure réseau) :
         // la nouvelle connexion remplace l'ancienne et reprend son identité, sa position et ses animaux.
         let old = self.conn_of(&name).and_then(|c| self.players.remove(&c));
@@ -618,6 +625,20 @@ pub(crate) mod tests {
         assert_eq!(g.animals()[&dog].tamed_by, None, "animal not tamed");
         let logs = drain(&mut bob_rx);
         assert!(logs.iter().any(|m| format!("{m:?}").contains("alice waves at you")), "{logs:?}");
+    }
+
+    #[test]
+    fn name_differing_only_by_case_is_rejected() {
+        let now = Instant::now();
+        let mut g = Game::new(World::new(5));
+        join(&mut g, 1, "bob", now);
+        let mut rx = join_rx(&mut g, 2, "Bob", now);
+        assert_eq!(drain(&mut rx), vec![ServerMsg::Rejected("name bob is already online".into())]);
+        assert_eq!(g.players.len(), 1);
+        // Même nom exact : remplacement de session.
+        join(&mut g, 3, "bob", now);
+        assert_eq!(g.players.len(), 1);
+        assert!(g.players.contains_key(&3));
     }
 
     #[test]

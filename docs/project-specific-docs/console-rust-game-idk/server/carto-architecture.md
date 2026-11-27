@@ -88,7 +88,7 @@ Un message de chat nettoyé qui commence par `/` est une commande, jamais diffus
 | `/help` | une ligne `Info` par entrée de `COMMANDS` : `/<usage> — <help>` |
 | `/who` | une ligne `Info` par joueur en ligne, triée par nom : distance (`Pos::dist`) et secteur (`cardinal`, 8 directions, `here` sous 2 tuiles) |
 | `/me <action>` | `Info` à tous : `* alice <action>` |
-| `/msg <nom> <texte>` | `Chat { from: "alice -> bob" }` à l'expéditeur et au destinataire (une copie si message à soi-même) ; le destinataire est le plus long nom en ligne suivi d'un espace (les noms peuvent en contenir) |
+| `/msg <nom> <texte>` | `Chat { from: "alice -> bob" }` à l'expéditeur et au destinataire (une copie si message à soi-même) ; le destinataire est le plus long nom en ligne suivi d'un espace, casse ASCII ignorée (les noms peuvent en contenir) |
 
 Commande inconnue : `Unknown command /x, try /help.` ; arguments manquants : `Usage: <usage>`. Ajouter une commande : une entrée dans `COMMANDS` (`name`, `usage`, `help`, `run`) et sa fonction dans `src/commands.rs`.
 
@@ -112,7 +112,7 @@ Aucun code ne retire d'animal aujourd'hui ; en ajouter un (mort, despawn) doit r
 Côté `Game` :
 
 - Envoi par `Player::send` (`try_send`). File pleine : drapeau `overflow`, déconnexion au tick suivant. File fermée : rien, le `Leave` de la tâche réseau arrive de lui-même.
-- `join` avec un nom déjà connecté **remplace** la session : l'ancien joueur est retiré de `players` (son `tx` est lâché, ce qui ferme sa connexion), il reçoit `Rejected("name <nom> used by a new connection")` en dernier message, et la nouvelle connexion reprend `id`, position et orientation (journal système « <nom> reconnected. » au lieu de « joined the world. »). Pas de passage par `offline`. Les animaux apprivoisés sont liés au nom : rien à migrer.
+- `join` avec un nom déjà connecté **remplace** la session : l'ancien joueur est retiré de `players` (son `tx` est lâché, ce qui ferme sa connexion), il reçoit `Rejected("name <nom> used by a new connection")` en dernier message, et la nouvelle connexion reprend `id`, position et orientation (journal système « <nom> reconnected. » au lieu de « joined the world. »). Pas de passage par `offline`. Un nom qui ne diffère d'un joueur en ligne que par la casse ASCII (`Bob` vs `bob`) est refusé : la nouvelle connexion reçoit `Rejected("name <autre> is already online")` et n'est pas insérée. Les animaux apprivoisés sont liés au nom : rien à migrer.
 - Le `Leave` tardif de l'ancienne `ConnId` ne trouve plus de joueur : sans effet, il n'écrase ni le nouveau joueur ni `offline`.
 - Nom nettoyé par `clean_name` (shared) (contrôles et caractères de format Unicode invisibles filtrés via `is_hidden_char`, `trim`, 16 caractères) ; plus de suffixe numérique.
 

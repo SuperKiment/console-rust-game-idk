@@ -36,7 +36,7 @@ pub fn run(game: &mut Game, conn: ConnId, line: &str) {
 
 fn usage(game: &Game, conn: ConnId, name: &str) {
     if let Some(c) = COMMANDS.iter().find(|c| c.name == name) {
-        game.tell(conn, LogKind::Info, format!("Usage: {}", c.usage));
+        game.tell(conn, LogKind::Info, format!("Usage: /{}", c.usage));
     }
 }
 
@@ -81,7 +81,10 @@ fn msg(game: &mut Game, conn: ConnId, args: &str) {
     let target = game
         .players
         .iter()
-        .filter(|(_, p)| args.strip_prefix(p.name.as_str()).is_some_and(|rest| rest.starts_with(' ')))
+        .filter(|(_, p)| {
+            let n = p.name.len();
+            args.get(..n).is_some_and(|h| h.eq_ignore_ascii_case(&p.name)) && args[n..].starts_with(' ')
+        })
         .max_by_key(|(_, p)| p.name.len());
     let Some((&to_conn, to)) = target else {
         // Un seul mot (ou rien) : arguments manquants ; sinon le nom donné n'existe pas.
@@ -182,7 +185,7 @@ mod tests {
             assert_eq!(logs(rx)[0].text, "* alice waves");
         }
         run(&mut g, 1, "me");
-        assert_eq!(logs(&mut rxs[0])[0].text, "Usage: me <action>");
+        assert_eq!(logs(&mut rxs[0])[0].text, "Usage: /me <action>");
         assert!(logs(&mut rxs[1]).is_empty());
     }
 
@@ -201,10 +204,13 @@ mod tests {
         run(&mut g, 1, "msg alice note");
         assert_eq!(logs(&mut rxs[0]).len(), 1, "une seule copie à soi-même");
 
+        run(&mut g, 1, "msg BOB SMITH salut");
+        assert_eq!(logs(&mut rxs[1])[0].text, "salut");
+        drain(&mut rxs[0]);
         run(&mut g, 1, "msg zed hi");
         assert_eq!(logs(&mut rxs[0])[0].text, "No player named zed online.");
         run(&mut g, 1, "msg carol");
-        assert_eq!(logs(&mut rxs[0])[0].text, "Usage: msg <name> <text>");
+        assert_eq!(logs(&mut rxs[0])[0].text, "Usage: /msg <name> <text>");
         assert!(logs(&mut rxs[2]).is_empty());
     }
 
