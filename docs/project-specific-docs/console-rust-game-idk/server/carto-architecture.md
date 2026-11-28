@@ -5,15 +5,15 @@
 | 36-58 | Boucle de jeu |
 | 59-70 | — Tick (20 Hz) |
 | 71-82 | — Actions des joueurs |
-| 83-97 | — Commandes de chat |
-| 98-110 | — Console de l'hôte (stdin) |
-| 111-119 | — Animaux et index de tuiles |
-| 120-134 | — Sessions et déconnexions |
-| 135-161 | Monde par chunks |
-| 162-168 | — Streaming de chunks |
-| 169-185 | IA des animaux (paramétrique) |
-| 186-215 | Sauvegarde |
-| 216-220 | Docs liées |
+| 83-99 | — Commandes de chat |
+| 100-112 | — Console de l'hôte (stdin) |
+| 113-121 | — Animaux et index de tuiles |
+| 122-136 | — Sessions et déconnexions |
+| 137-163 | Monde par chunks |
+| 164-170 | — Streaming de chunks |
+| 171-187 | IA des animaux (paramétrique) |
+| 188-217 | Sauvegarde |
+| 218-222 | Docs liées |
 # Serveur : architecture
 
 > Vérifié le 2026-11-28 depuis `crates/server/src/` (`lib.rs`, `main.rs`, `net.rs`, `game.rs`, `ai.rs`, `save.rs`, `rng.rs`, `world/`). Fiche : [vue-ensemble.md](vue-ensemble.md).
@@ -76,7 +76,7 @@ Avant `Interact`, `Build` ou `Break`, un `pending_move` éventuel est appliqué 
 
 `Chat` : caractères cachés supprimés (`is_hidden_char`, ZWJ conservé), `trim`, 240 caractères max (`MAX_CHAT`), message ignoré s'il n'a aucun caractère visible (`has_visible_char` : vide, blancs ou ZWJ seuls) ; diffusé à tous en `Log(Chat)`, sauf s'il commence par `/` (voir « Commandes de chat »).
 
-**Inventaire** : `Player.inventory` est un `Inventory` (`Vec<(Item, u16)>`, une pile par objet, ordre d'obtention). Il suit le joueur dans `offline` (`leave` le sauve, `join` le restaure) et dans le remplacement de session. Envoyé au client par `send_inventory` (`ServerMsg::Inventory`) au `Welcome` et à chaque changement.
+**Inventaire** : `Player.inventory` est un `Inventory` (`Vec<(Item, u16)>`, une pile par objet, ordre d'obtention). Il suit le joueur dans `offline` (`leave` le sauve, `join` le restaure) et dans le remplacement de session ; `Player.home` (`Option<Pos>`, `/sethome`) suit exactement le même chemin. Envoyé au client par `send_inventory` (`ServerMsg::Inventory`) au `Welcome` et à chaque changement.
 
 Les animaux ne bloquent jamais un joueur (commentaire de `try_move`), mais un joueur bloque les animaux.
 
@@ -91,6 +91,8 @@ Un message de chat nettoyé qui commence par `/` est une commande, jamais diffus
 | `/me <action>` | `Info` à tous : `* alice <action>` |
 | `/msg <nom> <texte>` | `Chat { from: "alice -> bob" }` à l'expéditeur et au destinataire (une copie si message à soi-même) ; le destinataire est le plus long nom en ligne suivi d'un espace, casse ASCII ignorée (les noms peuvent en contenir) |
 | `/tp <nom>` | nom = tout l'argument (espaces permis), casse ASCII ignorée ; place le joueur sur la 1re tuile voisine libre de la cible (`Game::free_spot_near`, même règle que le retour des animaux apprivoisés), annule `pending_move`, effet `Dust`, log Info aux deux ; refus : « No player named X online. », « You are already here. », « No room next to X. ». Chunks et position suivent au tick suivant |
+| `/sethome` | `Player.home = Some(pos)` (un seul home, écrasé) ; « Home set at x, y. » |
+| `/home` | destination = tuile du home si libre (`ai::free`), sinon 1re voisine libre (`Game::free_spot_near`) ; `teleport_player` + effet `Dust` ; « You go home. » ; aucune tuile : « Your home is blocked. ». Sans home : `world.spawn_point()` même règle, « No home set, back to spawn. » (« The spawn point is blocked. » si rien de libre) |
 | `/release` | animal sur la tuile visée (`pos.step(facing)`, `animal_at`) apprivoisé par soi : `tamed_by = None`, `staying = false`, « The X is free now. » ; sinon « Face one of your animals. » |
 
 Commande inconnue : `Unknown command /x, try /help.` ; arguments manquants : `Usage: <usage>`. Ajouter une commande : une entrée dans `COMMANDS` (`name`, `usage`, `help`, `run`) et sa fonction dans `src/commands.rs`.
@@ -128,7 +130,7 @@ Aucun code ne retire d'animal aujourd'hui ; en ajouter un (mort, despawn) doit r
 Côté `Game` :
 
 - Envoi par `Player::send` (`try_send`). File pleine : drapeau `overflow`, déconnexion au tick suivant. File fermée : rien, le `Leave` de la tâche réseau arrive de lui-même.
-- `join` avec un nom déjà connecté **remplace** la session : l'ancien joueur est retiré de `players` (son `tx` est lâché, ce qui ferme sa connexion), il reçoit `Rejected("name <nom> used by a new connection")` en dernier message, et la nouvelle connexion reprend `id`, position et orientation (journal système « <nom> reconnected. » au lieu de « joined the world. »). Pas de passage par `offline`. Un nom qui ne diffère d'un joueur en ligne que par la casse ASCII (`Bob` vs `bob`) est refusé : la nouvelle connexion reçoit `Rejected("name <autre> is already online")` et n'est pas insérée. Les animaux apprivoisés sont liés au nom : rien à migrer.
+- `join` avec un nom déjà connecté **remplace** la session : l'ancien joueur est retiré de `players` (son `tx` est lâché, ce qui ferme sa connexion), il reçoit `Rejected("name <nom> used by a new connection")` en dernier message, et la nouvelle connexion reprend `id`, position, orientation, inventaire et home (journal système « <nom> reconnected. » au lieu de « joined the world. »). Pas de passage par `offline`. Un nom qui ne diffère d'un joueur en ligne que par la casse ASCII (`Bob` vs `bob`) est refusé : la nouvelle connexion reçoit `Rejected("name <autre> is already online")` et n'est pas insérée. Les animaux apprivoisés sont liés au nom : rien à migrer.
 - Le `Leave` tardif de l'ancienne `ConnId` ne trouve plus de joueur : sans effet, il n'écrase ni le nouveau joueur ni `offline`.
 - Nom nettoyé par `clean_name` (shared) (contrôles et caractères de format Unicode invisibles filtrés via `is_hidden_char`, `trim`, 16 caractères) ; plus de suffixe numérique.
 
@@ -189,9 +191,9 @@ Priorité de décision dans `act` : animal `staying` ne bouge pas du tout (ni er
 
 | Champ de `SaveData` | Contenu |
 |---|---|
-| `version` | `SAVE_VERSION` (2) ; lue seule en tête de fichier ; version inconnue (ex. future) : erreur « unsupported save version N » |
+| `version` | `SAVE_VERSION` (3) ; lue seule en tête de fichier ; version inconnue (ex. future) : erreur « unsupported save version N » |
 | `seed`, `next_id` | graine du monde, prochain identifiant d'entité |
-| `players` | `(nom, position, direction, inventaire)` des joueurs connectés et hors ligne ; à la reconnexion sous le même nom, le joueur reprend sa position et son inventaire (`Game.offline`) |
+| `players` | `(nom, position, direction, inventaire, home)` (`home: Option<Pos>`, `/sethome`) des joueurs connectés et hors ligne ; à la reconnexion sous le même nom, le joueur reprend sa position, son inventaire et son home (`Game.offline`) |
 | `chunks` | chunks modifiés uniquement |
 | `spawned` | chunks dont les animaux ont été créés |
 | `animals` | `(espèce, position, maître)` ; de nouveaux identifiants sont attribués au chargement ; deux animaux sur la même tuile : le second est ignoré (avertissement) |
@@ -203,7 +205,7 @@ Déclencheurs (`crates/server/src/lib.rs`) : toutes les 60 s (`AUTOSAVE`), `/sav
 
 - **Copies tournantes** : `save::rotate_backups(dir, keep)` supprime `world.bin.<keep>`, décale `world.bin.<i>` vers `.<i+1>` (i décroissant) puis **copie** `world.bin` vers `world.bin.1` (l'original reste). `keep` = `Options.backups` (`--backups`, env `IDK_BACKUPS`, défaut 3 ; 0 = aucune, `world.bin` absent = rien). Appelée une fois au démarrage après un `save::read` réussi, puis par la tâche `spawn_blocking` de l'autosave tous les `BACKUP_EVERY` (10) autosaves (10 min), **avant** `save::write` (même thread). Pas de rotation à l'arrêt. Échec de rotation : `warn`, sans bloquer. Save illisible : l'erreur (chemin inclus) est suivie de « backups: world.bin.1..N in <dir> » si `world.bin.1` existe. Restauration manuelle uniquement.
 
-Chargement : `save::decode` lit d'abord `version` seule (`postcard::take_from_bytes::<u32>`, premier champ de `SaveData`, varint), puis dispatche par `match`. Deux bras : `SAVE_VERSION` (2) décode `SaveData` ; `1` décode `v1::SaveData` (copie figée, sans inventaire) puis la convertit (`From`, inventaires vides). `validate` s'applique ensuite aux deux.
+Chargement : `save::decode` lit d'abord `version` seule (`postcard::take_from_bytes::<u32>`, premier champ de `SaveData`, varint), puis dispatche par `match`. Trois bras : `SAVE_VERSION` (3) décode `SaveData` ; `2` décode `v2::SaveData` (copie figée, sans home) puis la convertit (`From`, homes à `None`) ; `1` décode `v1::SaveData` (copie figée, sans inventaire ni home) puis la convertit (`From`, inventaires vides, homes à `None`). `validate` s'applique ensuite à tous.
 
 Validation au chargement (`save::validate`, appelée par `decode`) : chaque chunk de `chunks` doit avoir exactement `CHUNK_AREA` tuiles, sinon erreur « invalid chunk at (x, y) » (sinon panic d'index au premier accès). Un id de tuile inconnu est refusé par le décodage postcard (variante d'enum invalide). Le chargement renvoie donc `Err` (le serveur ne démarre pas) au lieu de paniquer plus tard. `save::read` préfixe toute erreur de décodage ou de validation par le chemin du fichier (`<world>/world.bin: ...`) ; le fichier n'est jamais écrasé.
 

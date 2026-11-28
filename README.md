@@ -79,6 +79,8 @@ Un message qui commence par `/` est une commande (réponse visible par toi seul,
 | `/me <action>` | action visible de tous : `* alice <action>` |
 | `/msg <nom> <texte>` | message privé (le nom peut contenir des espaces) |
 | `/tp <nom>` | te téléporte à côté du joueur (nom entier, casse ignorée ; refusé si aucune tuile libre autour) |
+| `/sethome` | mémorise ta position actuelle comme home (un seul, écrasé à chaque appel ; conservé au redémarrage du serveur) |
+| `/home` | te téléporte à ton home (ou sur la tuile libre voisine si elle est occupée) ; sans home : point d'apparition |
 | `/release` | libère l'animal apprivoisé que tu regardes (le tien uniquement) ; caresser son animal bascule suit / reste |
 
 ## Config client

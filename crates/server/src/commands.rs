@@ -1,4 +1,4 @@
-//! Commandes de chat (`/help`, `/who`, `/me`, `/msg`, `/tp`, `/release`) : un message commençant par `/` n'est pas diffusé.
+//! Commandes de chat (`/help`, `/who`, `/me`, `/msg`, `/tp`, `/sethome`, `/home`, `/release`) : un message commençant par `/` n'est pas diffusé.
 //! Ajouter une commande = une entrée dans [`COMMANDS`] et sa fonction.
 //! [`console`] : commandes de l'hôte sur l'entrée standard du serveur (`/save`, `/say`, `/list`, `/kick`).
 
@@ -23,6 +23,8 @@ pub const COMMANDS: &[Command] = &[
     Command { name: "me", usage: "me <action>", help: "describe an action to everyone", run: me },
     Command { name: "msg", usage: "msg <name> <text>", help: "private message", run: msg },
     Command { name: "tp", usage: "tp <name>", help: "teleport next to a player", run: tp },
+    Command { name: "sethome", usage: "sethome", help: "remember this spot as your home", run: sethome },
+    Command { name: "home", usage: "home", help: "teleport to your home (or spawn)", run: home },
     Command { name: "release", usage: "release", help: "set free the animal you face", run: release },
 ];
 
@@ -180,6 +182,30 @@ fn tp(game: &mut Game, conn: ConnId, args: &str) {
     game.tell(to_conn, LogKind::Info, format!("{from} teleported next to you."));
 }
 
+fn sethome(game: &mut Game, conn: ConnId, _args: &str) {
+    let Some(p) = game.players.get_mut(&conn) else { return };
+    p.home = Some(p.pos);
+    let msg = format!("Home set at {}, {}.", p.pos.x, p.pos.y);
+    game.tell(conn, LogKind::Info, msg);
+}
+
+fn home(game: &mut Game, conn: ConnId, _args: &str) {
+    let Some(home) = game.players.get(&conn).map(|p| p.home) else { return };
+    let (target, blocked) = match home {
+        Some(h) => (h, "Your home is blocked."),
+        None => (game.world.spawn_point(), "The spawn point is blocked."),
+    };
+    // Tuile visée si libre, sinon première voisine libre (même règle que `/tp`).
+    let spot = if crate::ai::free(game, target) { Some(target) } else { game.free_spot_near(target) };
+    let Some(spot) = spot else {
+        return game.tell(conn, LogKind::Info, blocked);
+    };
+    game.teleport_player(conn, spot);
+    game.effect(spot, Effect::Dust);
+    let msg = if home.is_some() { "You go home." } else { "No home set, back to spawn." };
+    game.tell(conn, LogKind::Info, msg);
+}
+
 fn release(game: &mut Game, conn: ConnId, _args: &str) {
     let Some((name, target)) = game.players.get(&conn).map(|p| (p.name.clone(), p.pos.step(p.facing))) else {
         return;
@@ -334,6 +360,54 @@ mod tests {
         assert_eq!(g.players[&1].pos, far);
         assert_eq!(logs(&mut rxs[0])[0].text, "No room next to bob smith.");
         assert!(logs(&mut rxs[1]).is_empty());
+    }
+
+    #[test]
+    fn sethome_then_home_after_moving() {
+        let (mut g, mut rxs) = setup();
+        let h = g.players[&1].pos;
+        // Les autres joueurs apparaissent sur la même tuile : on les écarte pour que le home soit libre.
+        g.players.get_mut(&2).unwrap().pos = Pos::new(h.x + 100, h.y);
+        g.players.get_mut(&3).unwrap().pos = Pos::new(h.x + 101, h.y);
+        run(&mut g, 1, "sethome");
+        assert_eq!(logs(&mut rxs[0])[0].text, format!("Home set at {}, {}.", h.x, h.y));
+        g.players.get_mut(&1).unwrap().pos = Pos::new(h.x + 200, h.y);
+        run(&mut g, 1, "home");
+        assert_eq!(g.players[&1].pos, h);
+        assert_eq!(logs(&mut rxs[0])[0].text, "You go home.");
+    }
+
+    #[test]
+    fn home_without_sethome_goes_to_spawn() {
+        let (mut g, mut rxs) = setup();
+        let spawn = g.world.spawn_point();
+        g.players.get_mut(&1).unwrap().pos = Pos::new(spawn.x + 200, spawn.y);
+        run(&mut g, 1, "home");
+        assert!(g.players[&1].pos.dist(spawn) <= 1);
+        assert_eq!(logs(&mut rxs[0])[0].text, "No home set, back to spawn.");
+    }
+
+    #[test]
+    fn home_blocked_uses_neighbour_then_refuses() {
+        let (mut g, mut rxs) = setup();
+        let far = Pos::new(1000, 1000);
+        g.world.set_tile(far, Tile::Wall);
+        for d in Dir::ALL {
+            g.world.set_tile(far.step(d), Tile::Grass);
+        }
+        g.clear_animals();
+        g.players.get_mut(&1).unwrap().home = Some(far);
+        run(&mut g, 1, "home");
+        assert_eq!(g.players[&1].pos.dist(far), 1);
+        for d in Dir::ALL {
+            g.world.set_tile(far.step(d), Tile::Wall);
+        }
+        let here = Pos::new(far.x + 200, far.y);
+        g.players.get_mut(&1).unwrap().pos = here;
+        drain(&mut rxs[0]);
+        run(&mut g, 1, "home");
+        assert_eq!(g.players[&1].pos, here);
+        assert_eq!(logs(&mut rxs[0])[0].text, "Your home is blocked.");
     }
 
     #[test]
