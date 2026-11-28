@@ -3,17 +3,17 @@
 |---|---|
 | 21-35 | Modules |
 | 36-58 | Boucle de jeu |
-| 59-70 | — Tick (20 Hz) |
-| 71-84 | — Actions des joueurs |
-| 85-101 | — Commandes de chat |
-| 102-114 | — Console de l'hôte (stdin) |
-| 115-123 | — Animaux et index de tuiles |
-| 124-138 | — Sessions et déconnexions |
-| 139-165 | Monde par chunks |
-| 166-172 | — Streaming de chunks |
-| 173-189 | IA des animaux (paramétrique) |
-| 190-219 | Sauvegarde |
-| 220-224 | Docs liées |
+| 59-71 | — Tick (20 Hz) |
+| 72-85 | — Actions des joueurs |
+| 86-102 | — Commandes de chat |
+| 103-115 | — Console de l'hôte (stdin) |
+| 116-124 | — Animaux et index de tuiles |
+| 125-139 | — Sessions et déconnexions |
+| 140-166 | Monde par chunks |
+| 167-173 | — Streaming de chunks |
+| 174-190 | IA des animaux (paramétrique) |
+| 191-220 | Sauvegarde |
+| 221-225 | Docs liées |
 # Serveur : architecture
 
 > Vérifié le 2026-11-28 depuis `crates/server/src/` (`lib.rs`, `main.rs`, `net.rs`, `game.rs`, `ai.rs`, `save.rs`, `rng.rs`, `world/`). Fiche : [vue-ensemble.md](vue-ensemble.md).
@@ -61,10 +61,11 @@ flowchart LR
 `Game::tick` (`TICK` = 50 ms) enchaîne, dans cet ordre :
 
 1. **Mouvements** : exécute le `pending_move` des joueurs dont `next_move` est échu.
-2. **IA** : `ai::step`.
-3. **Streaming de chunks** : `stream_chunks` pour chaque joueur.
-4. **Entités** : `send_entities` envoie à chaque joueur les entités à moins de `VIEW_TILES` (96 tuiles). Le filtre par distance passe avant le clonage : seules les entités visibles sont copiées.
-5. **File pleine** : un joueur dont la file d'envoi a débordé pendant le tick est déconnecté (`leave`), voir « Sessions et déconnexions ».
+2. **Repousse** : `grow_back` traite les entrées échues de `Game.regrow` (`Vec<(Instant, Pos)>`, non sauvegardé). Si la tuile a toujours un `TileDef::regrow`, `set_tile` la remplace par la tuile cible (`TileChanged` aux joueurs qui ont le chunk). Si un joueur ou un animal l'occupe et que la cible n'est pas praticable (`BerryBush`), l'entrée est reportée de `REGROW_RETRY` (10 s). Une tuile changée entre-temps : entrée oubliée. Les entrées naissent dans `break_tile` (`schedule_regrow`) et au chargement (`from_save`, délai complet).
+3. **IA** : `ai::step`.
+4. **Streaming de chunks** : `stream_chunks` pour chaque joueur.
+5. **Entités** : `send_entities` envoie à chaque joueur les entités à moins de `VIEW_TILES` (96 tuiles). Le filtre par distance passe avant le clonage : seules les entités visibles sont copiées.
+6. **File pleine** : un joueur dont la file d'envoi a débordé pendant le tick est déconnecté (`leave`), voir « Sessions et déconnexions ».
 
 Un `Move` reçu hors cooldown (`MOVE_COOLDOWN` = 90 ms) s'exécute tout de suite dans `handle`. Sinon, il est mémorisé en `pending_move` (un seul, le dernier) pour le prochain tick.
 
