@@ -18,7 +18,7 @@ use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio::time::{MissedTickBehavior, interval};
 
-use game::{Game, TICK};
+use game::{Event, Game, TICK};
 use world::World;
 
 const AUTOSAVE: Duration = Duration::from_secs(60);
@@ -38,6 +38,7 @@ pub struct Options {
 pub async fn run(listener: TcpListener, opts: Options, shutdown: impl Future<Output = ()>) -> io::Result<()> {
     let mut game = load(&opts)?;
     let (events_tx, mut events) = mpsc::unbounded_channel();
+    read_console(events_tx.clone());
     let acceptor = tokio::spawn(net::accept_loop(listener, events_tx));
 
     let mut tick = interval(TICK);
@@ -51,8 +52,16 @@ pub async fn run(listener: TcpListener, opts: Options, shutdown: impl Future<Out
     loop {
         tokio::select! {
             _ = tick.tick() => game.tick(Instant::now()),
-            Some(ev) = events.recv() => game.event(ev, Instant::now()),
-            _ = autosave.tick() => autosave_in_background(&opts, &game, &mut writing, &mut autosaves),
+            Some(ev) = events.recv() => match ev {
+                // `/save` : écriture ici (elle vit dans ce module), les autres commandes vont à `Game`.
+                Event::Console(line) => {
+                    if commands::console(&mut game, &line) {
+                        save_in_background(&opts, &game, &mut writing, &mut autosaves, true);
+                    }
+                }
+                ev => game.event(ev, Instant::now()),
+            },
+            _ = autosave.tick() => save_in_background(&opts, &game, &mut writing, &mut autosaves, false),
             _ = &mut shutdown => break,
         }
     }
@@ -101,25 +110,51 @@ fn save(opts: &Options, game: &Game) {
     write_logged(dir, &game.to_save());
 }
 
-/// Autosave : l'instantané (`to_save`) est pris dans la boucle de jeu, l'écriture (fsync) part dans
+/// Lit l'entrée standard ligne par ligne et la pousse dans la boucle de jeu (console de l'hôte).
+/// Thread `std` détaché et pas `tokio::io::stdin` : une lecture de stdin ne s'annule pas, et celle
+/// de tokio (pool bloquant) ferait attendre l'arrêt du runtime jusqu'au prochain Entrée.
+/// S'arrête sans bruit à la fin de l'entrée ou sur erreur (docker sans tty : stdin fermé).
+fn read_console(events: mpsc::UnboundedSender<Event>) {
+    std::thread::spawn(move || {
+        for line in std::io::stdin().lines() {
+            let Ok(line) = line else { break };
+            if events.send(Event::Console(line)).is_err() {
+                break;
+            }
+        }
+    });
+}
+
+/// Autosave (ou `/save` de l'hôte si `manual`) : l'instantané (`to_save`) est pris dans la boucle de jeu, l'écriture (fsync) part dans
 /// un thread bloquant pour ne pas geler les ticks. Si la précédente écrit encore, ce tick est ignoré.
-fn autosave_in_background(
+/// `/save` n'avance pas le compteur de rotation des backups (jamais de rotation).
+fn save_in_background(
     opts: &Options,
     game: &Game,
     writing: &mut Option<JoinHandle<()>>,
     autosaves: &mut u32,
+    manual: bool,
 ) {
-    let Some(dir) = &opts.world_dir else { return };
+    let Some(dir) = &opts.world_dir else {
+        if manual {
+            tracing::warn!("world is not persisted (no save directory)");
+        }
+        return;
+    };
     if writing.as_ref().is_some_and(|h| !h.is_finished()) {
-        tracing::warn!("previous autosave still writing, skipped");
+        tracing::warn!("previous save still writing, skipped");
         return;
     }
-    *autosaves += 1;
-    let rotate = if *autosaves >= BACKUP_EVERY {
-        *autosaves = 0;
-        opts.backups
-    } else {
+    let rotate = if manual {
         0
+    } else {
+        *autosaves += 1;
+        if *autosaves >= BACKUP_EVERY {
+            *autosaves = 0;
+            opts.backups
+        } else {
+            0
+        }
     };
     let (dir, data) = (dir.clone(), game.to_save());
     *writing = Some(tokio::task::spawn_blocking(move || {

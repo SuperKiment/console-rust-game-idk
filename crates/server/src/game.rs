@@ -68,9 +68,15 @@ pub fn remove_items(inv: &mut Inventory, cost: &[(Item, u16)]) -> bool {
 
 /// What the network layer reports to the game.
 pub enum Event {
-    Join { conn: ConnId, name: String, tx: Sender<ServerMsg> },
+    Join {
+        conn: ConnId,
+        name: String,
+        tx: Sender<ServerMsg>,
+    },
     Msg(ConnId, ClientMsg),
     Leave(ConnId),
+    /// Ligne tapée par l'hôte sur l'entrée standard du serveur (`commands::console`).
+    Console(String),
 }
 
 pub struct Player {
@@ -151,6 +157,10 @@ impl Game {
             Event::Join { conn, name, tx } => self.join(conn, &name, tx, now),
             Event::Msg(conn, msg) => self.handle(conn, msg, now),
             Event::Leave(conn) => self.leave(conn),
+            // `/save` écrit le monde, ce que `run` (lib.rs) fait avant d'arriver ici : ignoré par `Game`.
+            Event::Console(line) => {
+                commands::console(self, &line);
+            }
         }
     }
 
@@ -255,7 +265,7 @@ impl Game {
         pos
     }
 
-    fn leave(&mut self, conn: ConnId) {
+    pub(crate) fn leave(&mut self, conn: ConnId) {
         if let Some(p) = self.players.remove(&conn) {
             tracing::info!(name = %p.name, "player left");
             self.broadcast_log(LogKind::System, format!("{} left the world.", p.name));
@@ -605,7 +615,7 @@ impl Game {
 
 /// Message de chat : sans caractères de contrôle ni de format Unicode (`strip_hidden`), sans espaces aux bords, au plus `MAX_CHAT`
 /// caractères. `None` si rien ne reste.
-fn clean_chat(raw: &str) -> Option<String> {
+pub(crate) fn clean_chat(raw: &str) -> Option<String> {
     let filtered = strip_hidden(raw);
     let text: String = filtered.trim().chars().take(MAX_CHAT).collect();
     let text = text.trim_end();
@@ -727,6 +737,48 @@ pub(crate) mod tests {
         join(&mut g, 3, "bob", now);
         assert_eq!(g.players.len(), 1);
         assert!(g.players.contains_key(&3));
+    }
+
+    #[test]
+    fn console_say_reaches_players() {
+        let now = Instant::now();
+        let mut g = Game::new(World::new(5));
+        let mut rx = join_rx(&mut g, 1, "alice", now);
+        drain(&mut rx);
+        g.event(Event::Console("/say hello\x07 all".into()), now);
+        let logs: Vec<String> = drain(&mut rx)
+            .into_iter()
+            .filter_map(|m| if let ServerMsg::Log(l) = m { Some(l.text) } else { None })
+            .collect();
+        assert_eq!(logs, vec!["[host] hello all".to_string()]);
+    }
+
+    #[test]
+    fn console_kick_rejects_and_moves_player_offline() {
+        let now = Instant::now();
+        let mut g = Game::new(World::new(5));
+        join(&mut g, 1, "alice", now);
+        let mut rx = join_rx(&mut g, 2, "bob", now);
+        drain(&mut rx);
+        g.event(Event::Console("kick BOB".into()), now);
+        assert_eq!(drain(&mut rx), vec![ServerMsg::Rejected("kicked by host".into())]);
+        assert!(matches!(rx.try_recv(), Err(tokio::sync::mpsc::error::TryRecvError::Disconnected)));
+        assert!(!g.players.contains_key(&2));
+        assert!(g.players.contains_key(&1));
+        assert!(g.offline.contains_key("bob"));
+    }
+
+    #[test]
+    fn console_unknown_input_does_not_panic_nor_save() {
+        let now = Instant::now();
+        let mut g = Game::new(World::new(5));
+        join(&mut g, 1, "alice", now);
+        for line in ["/kick nobody", "/kick", "/say", "", "  ", "/nope", "list"] {
+            g.event(Event::Console(line.into()), now);
+        }
+        assert!(g.players.contains_key(&1));
+        assert!(commands::console(&mut g, "/save"));
+        assert!(!commands::console(&mut g, "/list"));
     }
 
     #[test]

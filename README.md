@@ -30,6 +30,19 @@ docker compose run --rm --no-deps -e IDK_SERVER=<ip>:7777 client
 
 `--no-deps` évite de démarrer un serveur local inutile sur la machine du joueur.
 
+### Console de l'hôte
+
+Le serveur lit des commandes sur son entrée standard. Avec docker : `docker attach <conteneur>` (nom via `docker compose ps`), détacher avec Ctrl-P puis Ctrl-Q (Ctrl-C arrêterait le serveur). Sans docker : taper dans le terminal du serveur.
+
+| Commande | Effet |
+|---|---|
+| `/save` | écrit le monde tout de suite |
+| `/say <texte>` | message `[host] <texte>` à tous les joueurs |
+| `/list` | joueurs en ligne et leur position |
+| `/kick <nom>` | déconnecte le joueur (il voit « kicked by host ») |
+
+Le `/` initial est optionnel. Sans terminal (entrée standard fermée), la console s'éteint et le serveur tourne normalement.
+
 ## Sans docker
 
 ```sh

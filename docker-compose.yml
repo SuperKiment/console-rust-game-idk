@@ -7,6 +7,10 @@ services:
       - "7777:7777"
     environment:
       - IDK_SEED # optionnel, repris de l'environnement de l'hôte
+      - IDK_BACKUPS=${IDK_BACKUPS:-3} # copies tournantes de world.bin (0 = aucune)
+    # Console d'administration de l'hôte : `docker attach` (voir README).
+    stdin_open: true
+    tty: true
     volumes:
       - world:/data
     restart: unless-stopped

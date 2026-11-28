@@ -1,31 +1,32 @@
-15
+16
 | Lignes | Section |
 |---|---|
-| 20-34 | Modules |
-| 35-57 | Boucle de jeu |
-| 58-69 | — Tick (20 Hz) |
-| 70-81 | — Actions des joueurs |
-| 82-96 | — Commandes de chat |
-| 97-105 | — Animaux et index de tuiles |
-| 106-120 | — Sessions et déconnexions |
-| 121-147 | Monde par chunks |
-| 148-154 | — Streaming de chunks |
-| 155-171 | IA des animaux (paramétrique) |
-| 172-201 | Sauvegarde |
-| 202-206 | Docs liées |
+| 21-35 | Modules |
+| 36-58 | Boucle de jeu |
+| 59-70 | — Tick (20 Hz) |
+| 71-82 | — Actions des joueurs |
+| 83-97 | — Commandes de chat |
+| 98-110 | — Console de l'hôte (stdin) |
+| 111-119 | — Animaux et index de tuiles |
+| 120-134 | — Sessions et déconnexions |
+| 135-161 | Monde par chunks |
+| 162-168 | — Streaming de chunks |
+| 169-185 | IA des animaux (paramétrique) |
+| 186-215 | Sauvegarde |
+| 216-220 | Docs liées |
 # Serveur : architecture
 
-> Vérifié le 2026-11-27 depuis `crates/server/src/` (`lib.rs`, `main.rs`, `net.rs`, `game.rs`, `ai.rs`, `save.rs`, `rng.rs`, `world/`). Fiche : [vue-ensemble.md](vue-ensemble.md).
+> Vérifié le 2026-11-28 depuis `crates/server/src/` (`lib.rs`, `main.rs`, `net.rs`, `game.rs`, `ai.rs`, `save.rs`, `rng.rs`, `world/`). Fiche : [vue-ensemble.md](vue-ensemble.md).
 
 ## Modules
 
 | Fichier | Rôle |
 |---|---|
 | `src/main.rs` | arguments `clap`, journalisation, `TcpListener`, signaux d'arrêt (ctrl-c, SIGTERM) |
-| `src/lib.rs` | `run()` : boucle principale, chargement, autosauvegarde |
+| `src/lib.rs` | `run()` : boucle principale, chargement, autosauvegarde, `/save` de la console, tâche de lecture de stdin (`read_console`) |
 | `src/net.rs` | `accept_loop`, une tâche par connexion, pont vers `Game` par canaux |
 | `src/game.rs` | `Game` : joueurs, animaux, actions, tick, envoi des messages |
-| `src/commands.rs` | commandes de chat (`/help`, `/who`, `/me`, `/msg`, `/tp`, `/release`), table `COMMANDS` |
+| `src/commands.rs` | commandes de chat (`/help`, `/who`, `/me`, `/msg`, `/tp`, `/release`), table `COMMANDS` ; `console` : commandes de l'hôte |
 | `src/ai.rs` | comportement des animaux, caresses et apprivoisement |
 | `src/world/mod.rs` | `World` : chunks en mémoire, apparitions, persistance |
 | `src/world/generator.rs`, `noise.rs` | génération procédurale (bruit de valeur fractal) |
@@ -93,6 +94,19 @@ Un message de chat nettoyé qui commence par `/` est une commande, jamais diffus
 | `/release` | animal sur la tuile visée (`pos.step(facing)`, `animal_at`) apprivoisé par soi : `tamed_by = None`, `staying = false`, « The X is free now. » ; sinon « Face one of your animals. » |
 
 Commande inconnue : `Unknown command /x, try /help.` ; arguments manquants : `Usage: <usage>`. Ajouter une commande : une entrée dans `COMMANDS` (`name`, `usage`, `help`, `run`) et sa fonction dans `src/commands.rs`.
+
+### Console de l'hôte (stdin)
+
+`run` lance `read_console` : un thread `std` détaché lit `std::io::stdin()` ligne par ligne et pousse `Event::Console(ligne)` dans le même canal d'événements que les connexions. Fin de l'entrée ou erreur (docker sans tty) : le thread s'arrête sans log. Pas `tokio::io::stdin()` : sa lecture bloquante ne s'annule pas et ferait attendre l'arrêt du runtime (Ctrl-C, fin des tests) jusqu'au prochain Entrée ; le thread détaché meurt avec le processus. Dans docker, `stdin_open` et `tty` du service `server` permettent `docker attach` (détacher : Ctrl-P Ctrl-Q).
+
+`run` intercepte `Event::Console` : `commands::console(game, ligne)` traite la ligne et renvoie `true` pour `/save`, auquel cas `run` appelle `save_in_background(.., manual = true)` (même écriture asynchrone que l'autosave, mais sans toucher au compteur ni à la rotation des backups ; journal « world saved »). Passer par `Game::event` ignore `/save` (pas d'accès disque dans `Game`). Table à part de `COMMANDS` : jamais accessible aux joueurs. Le `/` initial est optionnel, le nom de commande insensible à la casse, la ligne vide ignorée ; commande inconnue : `warn` « unknown console command /x, try /save /say /list /kick ». Les réponses vont dans le journal du serveur (`tracing`), pas aux joueurs.
+
+| Commande | Effet |
+|---|---|
+| `/save` | sauvegarde immédiate (sans rotation) ; « world is not persisted » si pas de dossier de monde ; ignorée (warn « previous save still writing, skipped ») si une écriture est en cours |
+| `/say <texte>` | `LogKind::System` à tous : `[host] <texte>` ; texte nettoyé comme le chat (`clean_chat`) |
+| `/list` | une ligne `info` par joueur en ligne, triée : `nom x,y` ; « no player online » |
+| `/kick <nom>` | nom = tout l'argument, casse ASCII ignorée (comme `/tp`) ; `Rejected("kicked by host")` puis `Game::leave` (la chute du `tx` ferme la connexion, le joueur passe dans `offline`) ; inconnu : `warn` « no player named X online » |
 
 ### Animaux et index de tuiles
 
@@ -182,9 +196,9 @@ Priorité de décision dans `act` : animal `staying` ne bouge pas du tout (ni er
 | `spawned` | chunks dont les animaux ont été créés |
 | `animals` | `(espèce, position, maître)` ; de nouveaux identifiants sont attribués au chargement ; deux animaux sur la même tuile : le second est ignoré (avertissement) |
 
-Déclencheurs (`crates/server/src/lib.rs`) : toutes les 60 s (`AUTOSAVE`), et à l'arrêt sur ctrl-c ou SIGTERM (`shutdown_signal` dans `main.rs`). Une erreur d'écriture est journalisée sans arrêter le serveur.
+Déclencheurs (`crates/server/src/lib.rs`) : toutes les 60 s (`AUTOSAVE`), `/save` sur la console de l'hôte, et à l'arrêt sur ctrl-c ou SIGTERM (`shutdown_signal` dans `main.rs`). Une erreur d'écriture est journalisée sans arrêter le serveur.
 
-- **Autosave asynchrone** : `game.to_save()` (clone, rapide) est pris dans la boucle de jeu, puis `save::write` (fsync) part dans `tokio::task::spawn_blocking` : les ticks ne sont plus bloqués par le disque. `run()` garde le `JoinHandle` ; si l'écriture précédente tourne encore (`!is_finished()`), le tick d'autosave est ignoré (« previous autosave still writing, skipped »), jamais deux écritures en parallèle.
+- **Autosave asynchrone** : `game.to_save()` (clone, rapide) est pris dans la boucle de jeu, puis `save::write` (fsync) part dans `tokio::task::spawn_blocking` : les ticks ne sont plus bloqués par le disque. `run()` garde le `JoinHandle` ; si l'écriture précédente tourne encore (`!is_finished()`), l'autosave (ou le `/save`) est ignoré (« previous save still writing, skipped »), jamais deux écritures en parallèle.
 - **Sauvegarde finale** : synchrone, après avoir attendu (`await`) l'éventuelle écriture d'autosave en cours, pour ne jamais écrire deux fois en même temps dans `world.bin.tmp`. Au démarrage : sauvegarde existante (graine ignorée) sinon nouveau monde avec `--seed` ou une graine tirée de l'horloge.
 
 - **Copies tournantes** : `save::rotate_backups(dir, keep)` supprime `world.bin.<keep>`, décale `world.bin.<i>` vers `.<i+1>` (i décroissant) puis **copie** `world.bin` vers `world.bin.1` (l'original reste). `keep` = `Options.backups` (`--backups`, env `IDK_BACKUPS`, défaut 3 ; 0 = aucune, `world.bin` absent = rien). Appelée une fois au démarrage après un `save::read` réussi, puis par la tâche `spawn_blocking` de l'autosave tous les `BACKUP_EVERY` (10) autosaves (10 min), **avant** `save::write` (même thread). Pas de rotation à l'arrêt. Échec de rotation : `warn`, sans bloquer. Save illisible : l'erreur (chemin inclus) est suivie de « backups: world.bin.1..N in <dir> » si `world.bin.1` existe. Restauration manuelle uniquement.

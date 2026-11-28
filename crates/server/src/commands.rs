@@ -1,11 +1,12 @@
 //! Commandes de chat (`/help`, `/who`, `/me`, `/msg`, `/tp`, `/release`) : un message commençant par `/` n'est pas diffusé.
 //! Ajouter une commande = une entrée dans [`COMMANDS`] et sa fonction.
+//! [`console`] : commandes de l'hôte sur l'entrée standard du serveur (`/save`, `/say`, `/list`, `/kick`).
 
 use idk_shared::content::Effect;
 use idk_shared::geo::Pos;
-use idk_shared::protocol::LogKind;
+use idk_shared::protocol::{LogKind, ServerMsg};
 
-use crate::game::{ConnId, Game};
+use crate::game::{ConnId, Game, clean_chat};
 
 pub struct Command {
     pub name: &'static str,
@@ -35,6 +36,54 @@ pub fn run(game: &mut Game, conn: ConnId, line: &str) {
         Some(c) => (c.run)(game, conn, args.trim()),
         None => game.tell(conn, LogKind::Info, format!("Unknown command /{name}, try /help.")),
     }
+}
+
+/// Commande de la console de l'hôte (entrée standard du serveur). Table à part de [`COMMANDS`] :
+/// jamais accessible aux joueurs. `line` peut commencer par `/` (optionnel). Renvoie `true` pour
+/// `/save` : l'écriture du monde est faite par l'appelant (`run`), pas par `Game`.
+pub fn console(game: &mut Game, line: &str) -> bool {
+    let line = line.trim();
+    let line = line.strip_prefix('/').unwrap_or(line);
+    if line.is_empty() {
+        return false;
+    }
+    let (name, args) = line.split_once(char::is_whitespace).unwrap_or((line, ""));
+    let args = args.trim();
+    match name.to_ascii_lowercase().as_str() {
+        "save" => return true,
+        "say" => match clean_chat(args) {
+            Some(text) => game.broadcast_log(LogKind::System, format!("[host] {text}")),
+            None => tracing::warn!("usage: /say <text>"),
+        },
+        "list" => console_list(game),
+        "kick" => console_kick(game, args),
+        _ => tracing::warn!("unknown console command /{name}, try /save /say /list /kick"),
+    }
+    false
+}
+
+fn console_list(game: &Game) {
+    if game.players.is_empty() {
+        return tracing::info!("no player online");
+    }
+    let mut players: Vec<_> = game.players.values().collect();
+    players.sort_by(|a, b| a.name.cmp(&b.name));
+    for p in players {
+        tracing::info!("{} {},{}", p.name, p.pos.x, p.pos.y);
+    }
+}
+
+fn console_kick(game: &mut Game, name: &str) {
+    if name.is_empty() {
+        return tracing::warn!("usage: /kick <name>");
+    }
+    // Comme `/tp` : tout l'argument est le nom, casse ASCII ignorée.
+    let Some((&conn, p)) = game.players.iter().find(|(_, p)| p.name.eq_ignore_ascii_case(name)) else {
+        return tracing::warn!("no player named {name} online");
+    };
+    p.send(ServerMsg::Rejected("kicked by host".into()));
+    // La chute du `tx` (retrait de `players`) ferme la connexion ; le `Leave` tardif de la tâche réseau est sans effet.
+    game.leave(conn);
 }
 
 fn usage(game: &Game, conn: ConnId, name: &str) {
