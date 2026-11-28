@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::content::{Biome, Effect, Item, Species, Tile};
 use crate::geo::{CHUNK_AREA, ChunkPos, Dir, Pos};
 
-pub const PROTOCOL_VERSION: u32 = 5;
+pub const PROTOCOL_VERSION: u32 = 6;
 pub const DEFAULT_PORT: u16 = 7777;
 /// Radius (in chunks) of the area the server streams around each player.
 pub const VIEW_CHUNKS: i32 = 3;
@@ -162,7 +162,7 @@ pub struct EntityView {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Look {
     Player { name: String, color: u8 },
-    Animal { species: Species, tamed_by: Option<String> },
+    Animal { species: Species, tamed_by: Option<String>, staying: bool },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

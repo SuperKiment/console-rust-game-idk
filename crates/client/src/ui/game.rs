@@ -153,13 +153,13 @@ pub fn draw(f: &mut Frame, app: &App) {
         f.render_widget(Paragraph::new(online_lines).block(block("online")), online_area);
     }
 
-    let mut nearby: BTreeMap<&str, (usize, bool)> = BTreeMap::new();
+    // Groupés par espèce et, pour mes animaux, par état (un groupe par état : les états peuvent différer).
+    let mut nearby: BTreeMap<(&str, Option<bool>), usize> = BTreeMap::new();
     if let Some(pos) = s.my_pos() {
         for e in s.entities.iter().filter(|e| e.pos.dist(pos) <= NEARBY_RADIUS) {
-            if let Look::Animal { species, tamed_by } = &e.look {
-                let entry = nearby.entry(species.def().name).or_default();
-                entry.0 += 1;
-                entry.1 |= tamed_by.as_deref() == Some(s.name.as_str());
+            if let Look::Animal { species, tamed_by, staying } = &e.look {
+                let mine = tamed_by.as_deref() == Some(s.name.as_str());
+                *nearby.entry((species.def().name, mine.then_some(*staying))).or_default() += 1;
             }
         }
     }
@@ -168,16 +168,14 @@ pub fn draw(f: &mut Frame, app: &App) {
     } else {
         nearby
             .iter()
-            .map(|(name, (n, yours))| {
+            .map(|((name, state), n)| {
                 let mut l = Line::from(vec![
                     Span::styled(format!("{n:>3} "), dim),
                     Span::styled(plural(name, *n), text),
                 ]);
-                if *yours {
-                    l.push_span(Span::styled(
-                        format!(" {}", pick(g, "♥", "<3")),
-                        Style::new().fg(paint(Rgb(255, 95, 135))),
-                    ));
+                if let Some(staying) = state {
+                    let label = if *staying { " (stays)" } else { " (follows you)" };
+                    l.push_span(Span::styled(label, Style::new().fg(paint(Rgb(255, 95, 135)))));
                 }
                 l
             })
@@ -543,6 +541,41 @@ mod tests {
             now,
         );
         app
+    }
+
+    /// Panneau `nearby` avec deux animaux posés près du joueur (id 10 : à moi, id 11 : à un autre).
+    fn nearby_screen(mine_staying: bool) -> String {
+        use idk_shared::content::Species;
+        use idk_shared::geo::{Dir, Pos};
+        use idk_shared::protocol::{EntityView, ServerMsg};
+        let mut app = app_with_me();
+        let animal = |id, tamed_by: &str, staying| EntityView {
+            id,
+            pos: Pos { x: 4, y: 4 },
+            facing: Dir::South,
+            look: Look::Animal { species: Species::Cow, tamed_by: Some(tamed_by.into()), staying },
+        };
+        let me = EntityView {
+            id: 1,
+            pos: Pos { x: 3, y: 4 },
+            facing: Dir::South,
+            look: Look::Player { name: "bob".into(), color: 0 },
+        };
+        let es = vec![me, animal(10, "bob", mine_staying), animal(11, "eve", true)];
+        app.state.apply(ServerMsg::Entities(es), Instant::now());
+        screen_at(&app, 120, 40)
+    }
+
+    #[test]
+    fn nearby_shows_state_of_my_animals_only() {
+        let s = nearby_screen(true);
+        assert!(s.contains("cow (stays)"), "{s}");
+        assert!(!s.contains("follows you"), "{s}");
+        // L'animal de l'autre joueur (staying) n'a pas de suffixe : une seule ligne « (stays) »
+        assert_eq!(s.matches("(stays)").count(), 1, "{s}");
+        let s = nearby_screen(false);
+        assert!(s.contains("cow (follows you)"), "{s}");
+        assert!(!s.contains("(stays)"), "{s}");
     }
 
     #[test]
