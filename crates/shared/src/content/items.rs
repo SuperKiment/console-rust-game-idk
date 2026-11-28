@@ -14,6 +14,8 @@ content_table! {
         Stone => ItemDef { name: "stone", glyph: glyph('o', '●', "🪨"), fg: Rgb(160, 150, 140) },
         Fiber => ItemDef { name: "fiber", glyph: glyph('%', '§', "🌾"), fg: Rgb(110, 180, 80) },
         Flower => ItemDef { name: "flower", glyph: glyph('*', '✿', "🌼"), fg: Rgb(235, 200, 90) },
+        Berry => ItemDef { name: "berry", glyph: glyph(':', '•', "🫐"), fg: Rgb(200, 60, 90) },
+        Mushroom => ItemDef { name: "mushroom", glyph: glyph('?', 'τ', "🍄"), fg: Rgb(200, 160, 120) },
     }
 }
 
@@ -60,6 +62,22 @@ mod tests {
         let def = crate::content::Tile::Flowers.def();
         assert_eq!(def.drops, Some(Item::Flower));
         assert!(def.walkable, "les fleurs restent marchables");
+    }
+
+    #[test]
+    fn berry_bush_drops_berry_and_empties() {
+        use crate::content::Tile;
+        let def = Tile::BerryBush.def();
+        assert_eq!(def.drops, Some(Item::Berry));
+        assert_eq!(def.breaks_into, Some(Tile::BushEmpty));
+        assert_eq!(Tile::BushEmpty.def().drops, None);
+    }
+
+    #[test]
+    fn mushroom_drops_mushroom_and_is_walkable() {
+        let def = crate::content::Tile::Mushroom.def();
+        assert_eq!(def.drops, Some(Item::Mushroom));
+        assert!(def.walkable, "les champignons restent marchables");
     }
 
     #[test]

@@ -24,7 +24,7 @@ Source de vérité du contenu (une ligne de table = variante + définition) et d
 
 ## Tests
 
-Tests unitaires dans `src/net.rs` (aller-retour TCP), `src/content/mod.rs` (glyphes larges, biomes valides, invariants des espèces : `step_ms` > 0, phrases de caresse non vides, sons ; durée des effets ; tuiles cassées praticables), `src/content/biomes.rs` (`elevation_bands_cover_range`, `climate_picks_nearest`), `src/content/items.rs` (`dropping_tiles_are_breakable`, `buildable_tiles_are_breakable`, `planks_are_walkable_and_buildable`, `fence_blocks_and_is_buildable`, `flowers_drop_flower`, `item_names_are_unique`), `src/geo.rs` (géométrie), `src/protocol.rs` (`clean_name`, `is_hidden_char`, `strip_hidden`, `has_visible_char`, emoji `❤️` et ZWJ conservés). `cargo test -p idk-shared`.
+Tests unitaires dans `src/net.rs` (aller-retour TCP), `src/content/mod.rs` (glyphes larges, biomes valides, invariants des espèces : `step_ms` > 0, phrases de caresse non vides, sons ; durée des effets ; tuiles cassées praticables), `src/content/biomes.rs` (`elevation_bands_cover_range`, `climate_picks_nearest`), `src/content/items.rs` (`dropping_tiles_are_breakable`, `buildable_tiles_are_breakable`, `planks_are_walkable_and_buildable`, `fence_blocks_and_is_buildable`, `flowers_drop_flower`, `berry_bush_drops_berry_and_empties`, `mushroom_drops_mushroom_and_is_walkable`, `item_names_are_unique`), `src/geo.rs` (géométrie), `src/protocol.rs` (`clean_name`, `is_hidden_char`, `strip_hidden`, `has_visible_char`, emoji `❤️` et ZWJ conservés). `cargo test -p idk-shared`.
 
 ## Docs liées
 
