@@ -38,7 +38,7 @@ Définis dans `crates/shared/src/protocol.rs`.
 | `Welcome { id, name, seed }` | accepte la connexion (le nom peut être nettoyé, voir « Règles du serveur à l'accueil ») |
 | `Chunk(ChunkData)` | contenu complet d'un chunk (`CHUNK_AREA` = 1024 tuiles et biomes) |
 | `TileChanged { pos, tile }` | une tuile a changé, envoyé aux joueurs qui détiennent le chunk |
-| `Entities(Vec<EntityView>)` | entités proches du joueur, envoyé à chaque tick |
+| `Entities(Vec<EntityView>)` | entités proches du joueur, envoyé à chaque tick (`Look::Animal { species, tamed_by, staying }`) |
 | `Log(LogLine)` | ligne de journal (`System`, `Info`, `Chat`, `Animal`) |
 | `Effect { pos, effect }` | effet visuel éphémère |
 | `Online(Vec<(String, u8)>)` | joueurs connectés `(nom, couleur)`, à chaque arrivée et départ |
@@ -101,7 +101,7 @@ File d'envoi serveur par client : `mpsc::channel(SEND_QUEUE)` = 256 messages. En
 ## Versionnement
 
 > [!WARNING]
-> Tout changement incompatible de `ClientMsg`, `ServerMsg` ou de leurs types imbriqués incrémente `PROTOCOL_VERSION` (actuellement 5). Postcard n'a pas de champs nommés : l'ordre des variantes et des champs est le format.
+> Tout changement incompatible de `ClientMsg`, `ServerMsg` ou de leurs types imbriqués incrémente `PROTOCOL_VERSION` (actuellement 6 : `Look::Animal` porte `staying`, affiché dans `nearby`). Postcard n'a pas de champs nommés : l'ordre des variantes et des champs est le format.
 
 - Ajouter une variante de message : à la **fin** de l'enum, puis incrémenter la version.
 - Contenu (`Tile`, `Biome`, `Species`, `Effect`, `Item`) : ces enums transitent aussi sur le réseau (`ChunkData`, `Look`, `Effect`, `Inventory`) et dans la sauvegarde. Ajouter les lignes en **fin de table**, jamais en milieu ni en suppression. Voir [guide-ajout-contenu.md](guide-ajout-contenu.md).

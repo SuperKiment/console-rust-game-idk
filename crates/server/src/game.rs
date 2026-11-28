@@ -671,7 +671,7 @@ impl Game {
                 id: a.id,
                 pos: a.pos,
                 facing: a.facing,
-                look: Look::Animal { species: a.species, tamed_by: a.tamed_by.clone() },
+                look: Look::Animal { species: a.species, tamed_by: a.tamed_by.clone(), staying: a.staying },
             });
             p.send(ServerMsg::Entities(players.chain(animals).collect()));
         }
