@@ -4,16 +4,16 @@
 | 21-35 | Modules |
 | 36-58 | Boucle de jeu |
 | 59-70 | — Tick (20 Hz) |
-| 71-82 | — Actions des joueurs |
-| 83-99 | — Commandes de chat |
-| 100-112 | — Console de l'hôte (stdin) |
-| 113-121 | — Animaux et index de tuiles |
-| 122-136 | — Sessions et déconnexions |
-| 137-163 | Monde par chunks |
-| 164-170 | — Streaming de chunks |
-| 171-187 | IA des animaux (paramétrique) |
-| 188-217 | Sauvegarde |
-| 218-222 | Docs liées |
+| 71-84 | — Actions des joueurs |
+| 85-101 | — Commandes de chat |
+| 102-114 | — Console de l'hôte (stdin) |
+| 115-123 | — Animaux et index de tuiles |
+| 124-138 | — Sessions et déconnexions |
+| 139-165 | Monde par chunks |
+| 166-172 | — Streaming de chunks |
+| 173-189 | IA des animaux (paramétrique) |
+| 190-219 | Sauvegarde |
+| 220-224 | Docs liées |
 # Serveur : architecture
 
 > Vérifié le 2026-11-28 depuis `crates/server/src/` (`lib.rs`, `main.rs`, `net.rs`, `game.rs`, `ai.rs`, `save.rs`, `rng.rs`, `world/`). Fiche : [vue-ensemble.md](vue-ensemble.md).

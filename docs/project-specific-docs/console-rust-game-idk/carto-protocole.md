@@ -2,13 +2,13 @@
 | Lignes | Section |
 |---|---|
 | 18-21 | Framing |
-| 22-46 | Messages |
-| 47-74 | Séquence de connexion |
-| 75-83 | Règles du serveur à l'accueil |
-| 84-95 | Keepalive et timeouts |
-| 96-99 | Côté client |
-| 100-109 | Versionnement |
-| 110-112 | Points non vérifiés |
+| 22-47 | Messages |
+| 48-75 | Séquence de connexion |
+| 76-84 | Règles du serveur à l'accueil |
+| 85-96 | Keepalive et timeouts |
+| 97-100 | Côté client |
+| 101-110 | Versionnement |
+| 111-113 | Points non vérifiés |
 # Protocole client-serveur
 
 > Vérifié le 2026-11-27 depuis `crates/shared/src/protocol.rs`, `crates/shared/src/net.rs`, `crates/server/src/net.rs`, `crates/server/src/game.rs`, `crates/client/src/net.rs`, `crates/client/src/state.rs`.
