@@ -22,6 +22,7 @@ pub type ConnId = u64;
 
 pub const TICK: Duration = Duration::from_millis(50);
 const MOVE_COOLDOWN: Duration = Duration::from_millis(90);
+const MARK_COOLDOWN: Duration = Duration::from_secs(2);
 pub const VIEW_TILES: i32 = VIEW_CHUNKS * CHUNK_SIZE;
 /// Taille de la file d'envoi par client (messages). Pleine = client trop lent ou gelé : déconnecté.
 pub const SEND_QUEUE: usize = 256;
@@ -94,6 +95,7 @@ pub struct Player {
     /// Chunks this client currently holds.
     sent: HashSet<ChunkPos>,
     next_move: Instant,
+    next_mark: Instant,
     pending_move: Option<Dir>,
 }
 
@@ -235,6 +237,7 @@ impl Game {
             overflow: Cell::new(false),
             sent: HashSet::new(),
             next_move: now,
+            next_mark: now,
             pending_move: None,
         };
         self.players.insert(conn, player);
@@ -319,6 +322,13 @@ impl Game {
                 let target = p.pos.step(dir);
                 self.break_tile(conn, target);
             }
+            ClientMsg::Mark => {
+                if now >= p.next_mark {
+                    p.next_mark = now + MARK_COOLDOWN;
+                    let (pos, name) = (p.pos, p.name.clone());
+                    self.mark(conn, pos, &name);
+                }
+            }
             ClientMsg::Chat(text) => {
                 if let Some(text) = clean_chat(&text) {
                     let from = p.name.clone();
@@ -330,6 +340,22 @@ impl Game {
                     }
                 }
             }
+        }
+    }
+
+    /// Signale la position de `conn` : effet sur sa tuile, puis log par joueur (distance et direction).
+    fn mark(&self, conn: ConnId, pos: Pos, name: &str) {
+        self.effect(pos, Effect::Marker);
+        for (&id, p) in &self.players {
+            let text = if id == conn {
+                format!("You mark your position ({}, {}).", pos.x, pos.y)
+            } else if p.pos.dist(pos) < 2 {
+                format!("{name} is right here.")
+            } else {
+                let (dist, dir) = (p.pos.dist(pos), p.pos.compass(pos));
+                format!("{name} is at ({}, {}), {dist} tiles {dir}.", pos.x, pos.y)
+            };
+            p.send(ServerMsg::Log(LogLine::new(LogKind::System, text)));
         }
     }
 
@@ -654,6 +680,56 @@ pub(crate) mod tests {
             }
         }
         o
+    }
+
+    fn log_texts(msgs: &[ServerMsg]) -> Vec<&str> {
+        msgs.iter()
+            .filter_map(|m| match m {
+                ServerMsg::Log(l) => Some(l.text.as_str()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn mark_tells_everyone_with_distance_and_direction() {
+        let now = Instant::now();
+        let mut g = Game::new(World::new(5));
+        let mut rx1 = join_rx(&mut g, 1, "alice", now);
+        let mut rx2 = join_rx(&mut g, 2, "bob", now);
+        let o = g.players[&1].pos;
+        g.players.get_mut(&2).unwrap().pos = Pos::new(o.x - 3, o.y + 3);
+        drain(&mut rx1);
+        drain(&mut rx2);
+
+        g.event(Event::Msg(1, ClientMsg::Mark), now);
+        let (m1, m2) = (drain(&mut rx1), drain(&mut rx2));
+        assert_eq!(log_texts(&m1), [format!("You mark your position ({}, {}).", o.x, o.y)]);
+        assert_eq!(log_texts(&m2), [format!("alice is at ({}, {}), 3 tiles NE.", o.x, o.y)]);
+        assert!(
+            m1.iter()
+                .chain(&m2)
+                .any(|m| matches!(m, ServerMsg::Effect { pos, effect: Effect::Marker } if *pos == o))
+        );
+
+        // Joueur tout proche : « right here ».
+        g.players.get_mut(&2).unwrap().pos = Pos::new(o.x + 1, o.y);
+        g.event(Event::Msg(1, ClientMsg::Mark), now + Duration::from_secs(3));
+        assert_eq!(log_texts(&drain(&mut rx2)), ["alice is right here."]);
+    }
+
+    #[test]
+    fn mark_respects_cooldown() {
+        let now = Instant::now();
+        let mut g = Game::new(World::new(5));
+        let mut rx1 = join_rx(&mut g, 1, "alice", now);
+        drain(&mut rx1);
+        g.event(Event::Msg(1, ClientMsg::Mark), now);
+        assert_eq!(drain(&mut rx1).len(), 2, "effet + log");
+        g.event(Event::Msg(1, ClientMsg::Mark), now + Duration::from_millis(500));
+        assert!(drain(&mut rx1).is_empty(), "ignoré dans le cooldown");
+        g.event(Event::Msg(1, ClientMsg::Mark), now + Duration::from_millis(2100));
+        assert_eq!(drain(&mut rx1).len(), 2, "accepté après 2 s");
     }
 
     #[test]

@@ -31,6 +31,7 @@ Définis dans `crates/shared/src/protocol.rs`.
 | `Build(Dir, Tile)` / `Break(Dir)` | pose la tuile donnée (refusée si son `cost` est vide ; le client envoie `Wall`) / casse la tuile adjacente |
 | `Chat(String)` | message public, ou commande si le texte commence par `/` (jamais diffusée, voir [carto serveur](server/carto-architecture.md), section « Commandes de chat ») ; nettoyé côté serveur : caractères cachés supprimés (`strip_hidden`, ZWJ conservé), espaces des bords retirés, 240 caractères max, ignoré s'il n'a aucun caractère visible : ni blanc, ni caché, ni marque combinante (`has_visible_char`) |
 | `Ping` | keepalive toutes les 5 s ; ignoré par `Game`, il sert à réarmer le délai de lecture du serveur |
+| `Mark` | signale sa position à tous : effet `Marker` sur sa tuile, et un log `System` par joueur en ligne (distance et direction calculées pour lui) ; cooldown serveur de 2 s, ignoré sans réponse dans le cooldown |
 
 | `ServerMsg` | Rôle |
 |---|---|
@@ -100,7 +101,7 @@ File d'envoi serveur par client : `mpsc::channel(SEND_QUEUE)` = 256 messages. En
 ## Versionnement
 
 > [!WARNING]
-> Tout changement incompatible de `ClientMsg`, `ServerMsg` ou de leurs types imbriqués incrémente `PROTOCOL_VERSION` (actuellement 4). Postcard n'a pas de champs nommés : l'ordre des variantes et des champs est le format.
+> Tout changement incompatible de `ClientMsg`, `ServerMsg` ou de leurs types imbriqués incrémente `PROTOCOL_VERSION` (actuellement 5). Postcard n'a pas de champs nommés : l'ordre des variantes et des champs est le format.
 
 - Ajouter une variante de message : à la **fin** de l'enum, puis incrémenter la version.
 - Contenu (`Tile`, `Biome`, `Species`, `Effect`, `Item`) : ces enums transitent aussi sur le réseau (`ChunkData`, `Look`, `Effect`, `Inventory`) et dans la sauvegarde. Ajouter les lignes en **fin de table**, jamais en milieu ni en suppression. Voir [guide-ajout-contenu.md](guide-ajout-contenu.md).
