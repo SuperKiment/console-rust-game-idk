@@ -101,7 +101,7 @@ stateDiagram-v2
 | `chunks` (privé) | `Chunk` (ignoré si invalide), `TileChanged` ; purge au-delà de `KEEP_CHUNKS` (4, `crates/shared/src/protocol.rs`) chunks de la position du joueur |
 | `entities` | `Entities` (remplacement complet à chaque tick) |
 | `online` | `Online` |
-| `inventory` | `Inventory` (remplacement complet), vidé au `Welcome` ; pas encore affiché |
+| `inventory` | `Inventory` (remplacement complet), vidé au `Welcome` ; affiché par le panneau `bag` et la barre d'état incognito (`deps:`) |
 | `log` | `Log` et lignes locales ; 200 entrées max (`LOG_SIZE`), horodatées à la réception |
 | `log_scroll` | PgUp / PgDn / End : nombre d'entrées cachées sous la vue (0 = en bas), conservé au `Welcome` comme `log` |
 | `effects` | `Effect`, expiration selon `duration_ms` de l'effet |
