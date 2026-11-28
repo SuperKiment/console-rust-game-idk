@@ -345,6 +345,10 @@ impl Game {
             self.effect(target, Effect::Heart);
         } else if let Some(id) = self.animal_at(target) {
             crate::ai::pet(self, conn, id);
+        } else if let Some(t) = self.world.tile(target).def().toggles_to {
+            self.set_tile(target, t);
+            let text = if t.def().walkable { "You open the door." } else { "You close the door." };
+            self.tell(conn, LogKind::Info, text);
         } else {
             let tile = self.world.tile(target).def().name;
             let mut text = format!("{tile} ahead.");
@@ -673,6 +677,42 @@ pub(crate) mod tests {
         assert_eq!(g.animals()[&dog].tamed_by, None, "animal not tamed");
         let logs = drain(&mut bob_rx);
         assert!(logs.iter().any(|m| format!("{m:?}").contains("alice waves at you")), "{logs:?}");
+    }
+
+    #[test]
+    fn interact_toggles_door() {
+        let now = Instant::now();
+        let mut g = Game::new(World::new(5));
+        let mut rx = join_rx(&mut g, 1, "alice", now);
+        g.clear_animals();
+        let o = grass_field(&mut g);
+        let door = Pos::new(o.x + 1, o.y);
+        g.world.set_tile(door, Tile::Door);
+        drain(&mut rx);
+        g.event(Event::Msg(1, ClientMsg::Interact(Dir::East)), now);
+        assert_eq!(g.world.tile(door), Tile::OpenDoor);
+        let logs = drain(&mut rx);
+        assert!(logs.iter().any(|m| format!("{m:?}").contains("You open the door.")), "{logs:?}");
+        g.event(Event::Msg(1, ClientMsg::Interact(Dir::East)), now);
+        assert_eq!(g.world.tile(door), Tile::Door);
+        let logs = drain(&mut rx);
+        assert!(logs.iter().any(|m| format!("{m:?}").contains("You close the door.")), "{logs:?}");
+    }
+
+    #[test]
+    fn door_blocks_until_opened() {
+        let now = Instant::now();
+        let mut g = Game::new(World::new(5));
+        join(&mut g, 1, "alice", now);
+        g.clear_animals();
+        let o = grass_field(&mut g);
+        let door = Pos::new(o.x + 1, o.y);
+        g.world.set_tile(door, Tile::Door);
+        g.try_move(1, Dir::East, now);
+        assert_eq!(g.players[&1].pos, o, "closed door blocks");
+        g.world.set_tile(door, Tile::OpenDoor);
+        g.try_move(1, Dir::East, now);
+        assert_eq!(g.players[&1].pos, door, "open door lets through");
     }
 
     #[test]
