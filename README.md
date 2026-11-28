@@ -61,6 +61,7 @@ Options client : `--server`, `--name`, `--incognito`, `--configure` (env `IDK_SE
 | `e`, espace | interagir, caresser |
 | `b` | construire la tuile choisie (mur, porte… : voir `[`, `]`) |
 | `[`, `]` | choisir la tuile à construire (précédente, suivante, avec bouclage) ; la tuile et son coût s'affichent dans le panneau `you` (`build wall (1 stone)`) |
+| `p` | signaler sa position à tous (effet sur sa tuile ; chacun lit la distance et la direction, au plus une fois par 2 s) |
 | `x` | casser (arbre, pin, roche, cactus, mur, porte, planches, clôture, fleurs, buisson à baies, champignon : rapporte bois, pierre, fibre, fleur, baie ou champignon) |
 | `t`, entrée | chat (entrée envoie, `esc` annule, `↑`/`↓` historique des messages envoyés) |
 | `PgUp`, `PgDn`, `fin` | remonter, redescendre le journal, revenir en bas |
