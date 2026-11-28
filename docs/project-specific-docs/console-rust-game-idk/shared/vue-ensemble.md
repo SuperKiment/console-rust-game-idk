@@ -20,11 +20,11 @@ Ne dépend d'aucun autre crate du workspace. Utilisé par `idk-server` et `idk-c
 
 ## Place dans l'ensemble
 
-Source de vérité du contenu (une ligne de table = variante + définition) et du format réseau. Le serveur lit les champs de gameplay (`walkable`, `breaks_into`, `drops`, `Ai`, `spawns`), le client les champs d'affichage (`glyph`, `fg`, `bg`).
+Source de vérité du contenu (une ligne de table = variante + définition) et du format réseau. Le serveur lit les champs de gameplay (`walkable`, `breaks_into`, `drops`, `cost`, `Ai`, `spawns`), le client les champs d'affichage (`glyph`, `fg`, `bg`).
 
 ## Tests
 
-Tests unitaires dans `src/net.rs` (aller-retour TCP), `src/content/mod.rs` (glyphes larges, biomes valides, invariants des espèces : `step_ms` > 0, phrases de caresse non vides, sons ; durée des effets ; tuiles cassées praticables), `src/content/biomes.rs` (`elevation_bands_cover_range`, `climate_picks_nearest`), `src/content/items.rs` (`dropping_tiles_are_breakable`, `item_names_are_unique`), `src/geo.rs` (géométrie), `src/protocol.rs` (`clean_name`, `is_hidden_char`, `strip_hidden`, `has_visible_char`, emoji `❤️` et ZWJ conservés). `cargo test -p idk-shared`.
+Tests unitaires dans `src/net.rs` (aller-retour TCP), `src/content/mod.rs` (glyphes larges, biomes valides, invariants des espèces : `step_ms` > 0, phrases de caresse non vides, sons ; durée des effets ; tuiles cassées praticables), `src/content/biomes.rs` (`elevation_bands_cover_range`, `climate_picks_nearest`), `src/content/items.rs` (`dropping_tiles_are_breakable`, `buildable_tiles_are_breakable`, `flowers_drop_flower`, `item_names_are_unique`), `src/geo.rs` (géométrie), `src/protocol.rs` (`clean_name`, `is_hidden_char`, `strip_hidden`, `has_visible_char`, emoji `❤️` et ZWJ conservés). `cargo test -p idk-shared`.
 
 ## Docs liées
 
