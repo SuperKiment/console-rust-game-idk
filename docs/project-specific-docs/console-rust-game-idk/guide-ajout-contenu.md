@@ -2,8 +2,8 @@
 | Lignes | Section |
 |---|---|
 | 22-28 | Glyphes |
-| 29-40 | Exemples |
-| 41-43 | Tests de non-régression |
+| 29-42 | Exemples |
+| 43-45 | Tests de non-régression |
 # Ajouter du contenu (tuiles, biomes, animaux, effets, objets)
 
 Tout le contenu est déclaré dans des tables de `crates/shared/src/content/`, via la macro `content_table!` (`content/mod.rs`). Une ligne de table génère à la fois la variante d'enum (identifiant réseau et de sauvegarde) et sa définition : impossible de les désynchroniser.
@@ -13,7 +13,7 @@ Tout le contenu est déclaré dans des tables de `crates/shared/src/content/`, v
 
 | Table | Fichier | Ce qu'une ligne définit |
 |---|---|---|
-| `Tile` / `TILES` | `content/tiles.rs` | nom, glyphe (ASCII / Unicode / large), couleur, fond optionnel (`bg`, sinon fond du biome), praticable, ce qu'elle devient une fois cassée, objet donné quand on la casse (`drops`), coût de construction (`cost`, liste vide = non constructible), raccord en traits de boîte, tuile vers laquelle `interact` bascule (`toggles_to`, `None` par défaut) |
+| `Tile` / `TILES` | `content/tiles.rs` | nom, glyphe (ASCII / Unicode / large), couleur, fond optionnel (`bg`, sinon fond du biome), praticable, ce qu'elle devient une fois cassée, objet donné quand on la casse (`drops`), coût de construction (`cost`, liste vide = non constructible), raccord en traits de boîte, tuile vers laquelle `interact` bascule (`toggles_to`, `None` par défaut), repousse (`regrow`, `None` par défaut) |
 | `Biome` / `BIOMES` | `content/biomes.rs` | couleur de sol, bande d'altitude, climat préféré (température, humidité), palette pondérée de tuiles, apparitions d'animaux par chunk |
 | `Species` / `SPECIES` | `content/species.rs` | nom, glyphe, couleur, paramètres d'IA (`Ai`), sons, réactions aux caresses |
 | `Effect` / `EFFECTS` | `content/effects.rs` | glyphe, couleur et durée d'un effet visuel éphémère |
@@ -37,6 +37,8 @@ Nouvel objet : une ligne dans `ITEMS` (nom unique, glyphe, couleur), à la fin d
 Tuile constructible : `cost: &[(Item::X, n)]` sur sa ligne de `TILES` (vide par défaut = non constructible). Elle doit aussi avoir `breaks_into: Some(_)` (test `buildable_tiles_are_breakable`). `Game::build` retire le coût du sac (`remove_items`, tout ou rien) avant de poser la tuile demandée par `ClientMsg::Build(dir, tile)` ; une tuile sans coût est refusée.
 
 Tuile interactive (porte) : `toggles_to: Some(Tile::X)` ; `Interact` la remplace par `X` (journal « You open the door. » si `X` est praticable, « You close the door. » sinon). Deux lignes réciproques suffisent (`Door` <-> `OpenDoor`) ; ajouter en fin de table (discriminants = format réseau/sauvegarde).
+
+Tuile qui repousse : `regrow: Some((Tile::X, secondes))`. Quand une tuile avec `regrow` apparaît par `Game::break_tile` (ex. `BushEmpty` après cueillette d'un `BerryBush`), `Game::schedule_regrow` planifie son remplacement par `X` après le délai ; `Game::tick` l'applique (`TileChanged` aux joueurs). Générique : toute tuile avec `regrow` repousse, seul `BushEmpty` (300 s -> `BerryBush`) l'utilise. Une tuile changée avant l'échéance (mur posé, buisson cassé) n'est pas remplacée. Si un joueur ou un animal est sur la tuile et que `X` est un obstacle, la repousse est reportée de 10 s (`REGROW_RETRY`). Les échéances ne sont pas sauvegardées : `Game::from_save` replanifie chaque tuile `regrow` des chunks modifiés avec le délai complet.
 
 ## Tests de non-régression
 
