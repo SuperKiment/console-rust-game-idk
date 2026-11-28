@@ -19,6 +19,8 @@ const TELEPORT_DIST: i32 = 40;
 const FOLLOW_DIST: i32 = 2;
 /// Radius within which animal sounds appear in the log (they are always shown as effects).
 const HEAR_RADIUS: i32 = 10;
+/// Une bête dont le maître est hors ligne depuis au moins ce délai (secondes réelles, 7 jours) peut être apprivoisée par un autre.
+const TAME_EXPIRY_SECS: u64 = 7 * 24 * 3600;
 
 /// Advances every active animal whose next step is due.
 pub fn step(game: &mut Game, now: Instant) {
@@ -125,7 +127,9 @@ fn teleport_near(game: &mut Game, id: EntityId, target: Pos) {
 }
 
 /// A player pets an animal: a reaction; tameable animals start following them, and the owner's pets toggle follow / stay.
-pub fn pet(game: &mut Game, conn: ConnId, id: EntityId) {
+/// An animal whose owner has been offline for [`TAME_EXPIRY_SECS`] (or is unknown) is taken over by the petter.
+/// `unix_now`: current time in Unix seconds (a parameter so tests can simulate the clock).
+pub fn pet(game: &mut Game, conn: ConnId, id: EntityId, unix_now: u64) {
     let me = game.players[&conn].name.clone();
     let a = &game.animals()[&id];
     let (def, pos, tamed_by) = (a.species.def(), a.pos(), a.tamed_by.clone());
@@ -146,7 +150,21 @@ pub fn pet(game: &mut Game, conn: ConnId, id: EntityId) {
                 format!("The {} follows you again.", def.name)
             }
         }
-        Some(owner) => format!("The {} is loyal to {owner}.", def.name),
+        Some(owner) => {
+            let owner_online = game.players.values().any(|p| p.name == owner);
+            let expired = game
+                .offline
+                .get(&owner)
+                .is_none_or(|(.., last_seen)| last_seen.saturating_add(TAME_EXPIRY_SECS) <= unix_now);
+            if !owner_online && expired {
+                let a = game.animal_mut(id);
+                a.tamed_by = Some(me);
+                a.staying = false;
+                format!("The {} will follow you now.", def.name)
+            } else {
+                format!("The {} is loyal to {owner}.", def.name)
+            }
+        }
         None => {
             game.animal_mut(id).tamed_by = Some(me);
             format!("The {} will follow you now.", def.name)
@@ -158,7 +176,7 @@ pub fn pet(game: &mut Game, conn: ConnId, id: EntityId) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game::Event;
+    use crate::game::{Event, unix_now};
     use crate::world::World;
     use idk_shared::content::{Species, Tile};
     use idk_shared::protocol::{ClientMsg, ServerMsg};
@@ -178,7 +196,7 @@ mod tests {
             }
         }
         let pos = Pos::new(o.x + offset.0, o.y + offset.1);
-        let id = g.insert_animal(species, pos, None, now).unwrap();
+        let id = g.insert_animal(species, pos, None, false, now).unwrap();
         (g, id, rx, now)
     }
 
@@ -200,7 +218,7 @@ mod tests {
         assert!(g.animals()[&dog].pos().dist(g.players[&1].pos) <= FOLLOW_DIST + 1);
         g.assert_animal_index();
 
-        pet(&mut g, 1, dog);
+        pet(&mut g, 1, dog, unix_now());
         assert_eq!(g.animals()[&dog].tamed_by.as_deref(), Some("alice"), "petting again keeps the owner");
         assert!(g.animals()[&dog].staying, "petting again makes it stay");
     }
@@ -208,8 +226,8 @@ mod tests {
     #[test]
     fn staying_animal_does_not_move_until_petted_again() {
         let (mut g, dog, _rx, now) = setup(Species::Dog, (1, 0));
-        pet(&mut g, 1, dog);
-        pet(&mut g, 1, dog);
+        pet(&mut g, 1, dog, unix_now());
+        pet(&mut g, 1, dog, unix_now());
         assert!(g.animals()[&dog].staying);
         // Maître très loin : ni errance ni téléportation.
         let player = g.players[&1].pos;
@@ -219,17 +237,63 @@ mod tests {
         assert_eq!(g.animals()[&dog].pos(), far);
         g.assert_animal_index();
 
-        pet(&mut g, 1, dog);
+        pet(&mut g, 1, dog, unix_now());
         assert!(!g.animals()[&dog].staying);
         run(&mut g, now + Duration::from_secs(10), 2);
         assert!(g.animals()[&dog].pos().dist(player) <= 1, "follows again (teleport)");
     }
 
+    /// Chien de "bob" caressé par "alice" à l'instant `now` ; bob hors ligne depuis `away_secs` (`None` : inconnu).
+    fn pet_by_other(away_secs: Option<u64>, owner_online: bool) -> (Game, EntityId) {
+        let (mut g, dog, _rx, now) = setup(Species::Dog, (1, 0));
+        let unix = 10_000_000;
+        g.animal_mut(dog).tamed_by = Some("bob".into());
+        g.animal_mut(dog).staying = true;
+        let (tx, _rx2) = tokio::sync::mpsc::channel(crate::game::SEND_QUEUE);
+        if owner_online {
+            g.event(Event::Join { conn: 2, name: "bob".into(), tx }, now);
+        }
+        // Après la connexion (qui retire l'entrée) : l'entrée `offline` reste donc en plus du joueur en ligne.
+        if let Some(away) = away_secs {
+            g.offline.insert("bob".into(), (Pos::new(0, 0), Dir::South, vec![], None, unix - away));
+        }
+        pet(&mut g, 1, dog, unix);
+        (g, dog)
+    }
+
+    #[test]
+    fn pet_by_other_is_refused_before_seven_days_offline() {
+        let (g, dog) = pet_by_other(Some(TAME_EXPIRY_SECS - 24 * 3600), false);
+        assert_eq!(g.animals()[&dog].tamed_by.as_deref(), Some("bob"));
+        assert!(g.animals()[&dog].staying);
+    }
+
+    #[test]
+    fn pet_by_other_takes_over_after_seven_days_offline() {
+        let (g, dog) = pet_by_other(Some(TAME_EXPIRY_SECS), false);
+        assert_eq!(g.animals()[&dog].tamed_by.as_deref(), Some("alice"));
+        assert!(!g.animals()[&dog].staying, "the new owner's pet follows");
+    }
+
+    #[test]
+    fn pet_by_other_takes_over_when_owner_unknown() {
+        let (g, dog) = pet_by_other(None, false);
+        assert_eq!(g.animals()[&dog].tamed_by.as_deref(), Some("alice"));
+        assert!(!g.animals()[&dog].staying);
+    }
+
+    #[test]
+    fn pet_by_other_is_refused_when_owner_online() {
+        // Même avec une vieille entrée `offline` oubliée : le maître en ligne prime.
+        let (g, dog) = pet_by_other(Some(TAME_EXPIRY_SECS * 2), true);
+        assert_eq!(g.animals()[&dog].tamed_by.as_deref(), Some("bob"));
+    }
+
     #[test]
     fn staying_animal_near_owner_does_not_wander() {
         let (mut g, dog, _rx, now) = setup(Species::Dog, (1, 0));
-        pet(&mut g, 1, dog);
-        pet(&mut g, 1, dog);
+        pet(&mut g, 1, dog, unix_now());
+        pet(&mut g, 1, dog, unix_now());
         let pos = g.animals()[&dog].pos();
         run(&mut g, now, 20);
         assert_eq!(g.animals()[&dog].pos(), pos);
@@ -335,7 +399,7 @@ mod tests {
     fn entities_outside_view_are_not_sent() {
         let (mut g, far, mut rx, now) = setup(Species::Cow, (VIEW_TILES + 5, 0));
         let pos = g.players[&1].pos.step(Dir::East);
-        let near = g.insert_animal(Species::Cow, pos, None, now).unwrap();
+        let near = g.insert_animal(Species::Cow, pos, None, false, now).unwrap();
         g.tick(now);
         let mut last = None;
         while let Ok(msg) = rx.try_recv() {

@@ -433,7 +433,7 @@ mod tests {
         let p = g.players[&1].pos;
         let facing = g.players[&1].facing;
         let spot = p.step(facing);
-        let dog = g.insert_animal(Species::Dog, spot, Some("alice".into()), now).unwrap();
+        let dog = g.insert_animal(Species::Dog, spot, Some("alice".into()), false, now).unwrap();
         g.animal_mut(dog).staying = true;
         run(&mut g, 2, "release");
         assert_eq!(logs(&mut rxs[1])[0].text, "Face one of your animals.");
@@ -453,7 +453,7 @@ mod tests {
         let now = Instant::now();
         g.clear_animals();
         let spot = g.players[&1].pos.step(g.players[&1].facing);
-        let dog = g.insert_animal(Species::Dog, spot, Some("carol".into()), now).unwrap();
+        let dog = g.insert_animal(Species::Dog, spot, Some("carol".into()), false, now).unwrap();
         run(&mut g, 1, "release");
         assert_eq!(logs(&mut rxs[0])[0].text, "Face one of your animals.");
         assert_eq!(g.animals()[&dog].tamed_by.as_deref(), Some("carol"));

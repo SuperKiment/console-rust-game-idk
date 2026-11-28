@@ -181,7 +181,7 @@ flowchart TD
 | `idle` | probabilité de rester immobile |
 | `flee_radius` | fuit les joueurs plus proches que cette distance (0 = ne fuit jamais, même avec un joueur sur sa tuile) |
 | `curious_radius` | s'approche des joueurs plus proches, une fois sur deux (arrêt à `FOLLOW_DIST` = 2 ; 0 = indifférent) |
-| `tameable` | une caresse le fait suivre le joueur ; une nouvelle caresse du maître bascule suit / reste (`Animal.staying`, non sauvegardé : au redémarrage il suit de nouveau) ; `/release` le libère |
+| `tameable` | une caresse le fait suivre le joueur ; une nouvelle caresse du maître bascule suit / reste (`Animal.staying`, sauvegardé) ; `/release` le libère ; caressé par un autre joueur, il change de maître (et suit) si le maître est hors ligne depuis `TAME_EXPIRY_SECS` (7 jours réels) ou inconnu, sinon « loyal to » |
 | `sound_chance` | probabilité par pas d'émettre un son |
 
 `ai::step` calcule la liste des joueurs une fois par tick, puis filtre les animaux : `next_step` échu d'abord, puis actif si le maître est en ligne (quelle que soit la distance, sinon la téléportation de `act` ne serait jamais atteinte) ou si un joueur est à moins de `ACTIVE_RADIUS`. Le déchargement de chunks est côté client uniquement : les animaux vivent dans `Game.animals`, rien à décharger côté serveur.
@@ -194,12 +194,12 @@ Priorité de décision dans `act` : animal `staying` ne bouge pas du tout (ni er
 
 | Champ de `SaveData` | Contenu |
 |---|---|
-| `version` | `SAVE_VERSION` (3) ; lue seule en tête de fichier ; version inconnue (ex. future) : erreur « unsupported save version N » |
+| `version` | `SAVE_VERSION` (4) ; lue seule en tête de fichier ; version inconnue (ex. future) : erreur « unsupported save version N » |
 | `seed`, `next_id` | graine du monde, prochain identifiant d'entité |
-| `players` | `(nom, position, direction, inventaire, home)` (`home: Option<Pos>`, `/sethome`) des joueurs connectés et hors ligne ; à la reconnexion sous le même nom, le joueur reprend sa position, son inventaire et son home (`Game.offline`) |
+| `players` | `SavedPlayer { name, pos, facing, inventory, home, last_seen }` (`home: Option<Pos>`, `/sethome` ; `last_seen` : secondes Unix, l'ordre des champs est le format) des joueurs connectés et hors ligne ; à la reconnexion sous le même nom, le joueur reprend sa position, son inventaire et son home (`Game.offline`, qui stocke aussi `last_seen`). `last_seen` est posé à `leave` (`game::unix_now`) ; à la sauvegarde, un joueur en ligne prend l'heure courante, un hors ligne garde la valeur stockée |
 | `chunks` | chunks modifiés uniquement |
 | `spawned` | chunks dont les animaux ont été créés |
-| `animals` | `(espèce, position, maître)` ; de nouveaux identifiants sont attribués au chargement ; deux animaux sur la même tuile : le second est ignoré (avertissement) |
+| `animals` | `(espèce, position, maître, staying)` ; de nouveaux identifiants sont attribués au chargement ; deux animaux sur la même tuile : le second est ignoré (avertissement) |
 
 Déclencheurs (`crates/server/src/lib.rs`) : toutes les 60 s (`AUTOSAVE`), `/save` sur la console de l'hôte, et à l'arrêt sur ctrl-c ou SIGTERM (`shutdown_signal` dans `main.rs`). Une erreur d'écriture est journalisée sans arrêter le serveur.
 
@@ -208,7 +208,7 @@ Déclencheurs (`crates/server/src/lib.rs`) : toutes les 60 s (`AUTOSAVE`), `/sav
 
 - **Copies tournantes** : `save::rotate_backups(dir, keep)` supprime `world.bin.<keep>`, décale `world.bin.<i>` vers `.<i+1>` (i décroissant) puis **copie** `world.bin` vers `world.bin.1` (l'original reste). `keep` = `Options.backups` (`--backups`, env `IDK_BACKUPS`, défaut 3 ; 0 = aucune, `world.bin` absent = rien). Appelée une fois au démarrage après un `save::read` réussi, puis par la tâche `spawn_blocking` de l'autosave tous les `BACKUP_EVERY` (10) autosaves (10 min), **avant** `save::write` (même thread). Pas de rotation à l'arrêt. Échec de rotation : `warn`, sans bloquer. Save illisible : l'erreur (chemin inclus) est suivie de « backups: world.bin.1..N in <dir> » si `world.bin.1` existe. Restauration manuelle uniquement.
 
-Chargement : `save::decode` lit d'abord `version` seule (`postcard::take_from_bytes::<u32>`, premier champ de `SaveData`, varint), puis dispatche par `match`. Trois bras : `SAVE_VERSION` (3) décode `SaveData` ; `2` décode `v2::SaveData` (copie figée, sans home) puis la convertit (`From`, homes à `None`) ; `1` décode `v1::SaveData` (copie figée, sans inventaire ni home) puis la convertit (`From`, inventaires vides, homes à `None`). `validate` s'applique ensuite à tous.
+Chargement : `save::decode` lit d'abord `version` seule (`postcard::take_from_bytes::<u32>`, premier champ de `SaveData`, varint), puis dispatche par `match`. Quatre bras : `SAVE_VERSION` (4) décode `SaveData` ; `3` décode `v3::SaveData` (copie figée, sans `last_seen` ni `staying`) puis la convertit (`From`, `last_seen` = heure du chargement, `staying = false`) ; `2` décode `v2::SaveData` (copie figée, sans home) puis la convertit (`From`, homes à `None`, plus les valeurs par défaut de la v3) ; `1` décode `v1::SaveData` (copie figée, sans inventaire ni home) puis la convertit (`From`, inventaires vides, homes à `None`, plus les valeurs par défaut de la v3). `validate` s'applique ensuite à tous.
 
 Validation au chargement (`save::validate`, appelée par `decode`) : chaque chunk de `chunks` doit avoir exactement `CHUNK_AREA` tuiles, sinon erreur « invalid chunk at (x, y) » (sinon panic d'index au premier accès). Un id de tuile inconnu est refusé par le décodage postcard (variante d'enum invalide). Le chargement renvoie donc `Err` (le serveur ne démarre pas) au lieu de paniquer plus tard. `save::read` préfixe toute erreur de décodage ou de validation par le chemin du fichier (`<world>/world.bin: ...`) ; le fichier n'est jamais écrasé.
 
