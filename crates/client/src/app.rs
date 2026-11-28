@@ -45,12 +45,26 @@ pub enum Status {
     Rejected(String),
 }
 
+/// Tuiles constructibles : celles qui ont un coût de construction.
+pub fn buildable() -> impl Iterator<Item = Tile> {
+    Tile::ALL.iter().copied().filter(|t| !t.def().cost.is_empty())
+}
+
+/// Tuile constructible `step` crans après `current` (négatif : avant), avec bouclage.
+fn cycle(current: Tile, step: i32) -> Tile {
+    let list: Vec<Tile> = buildable().collect();
+    let i = list.iter().position(|t| *t == current).unwrap_or(0) as i32;
+    list[(i + step).rem_euclid(list.len() as i32) as usize]
+}
+
 pub struct App {
     pub config: Config,
     pub state: GameState,
     pub mode: Mode,
     pub status: Status,
     pub incognito: bool,
+    /// Tuile envoyée par `Action::Build` (changée par `[` / `]`).
+    pub build: Tile,
     pub started: Instant,
     net: UnboundedSender<ClientMsg>,
     #[cfg(test)]
@@ -77,6 +91,7 @@ impl App {
         Self {
             config: Config::default(),
             incognito: false,
+            build: buildable().next().expect("no buildable tile"),
             state: GameState::default(),
             mode: Mode::Play,
             status,
@@ -99,6 +114,7 @@ pub async fn run(terminal: &mut DefaultTerminal, config: Config) -> std::io::Res
     let net = net::spawn(config.server.clone(), config.name.clone(), events_tx);
     let mut app = App {
         incognito: config.incognito,
+        build: buildable().next().expect("no buildable tile"),
         config,
         state: GameState::default(),
         mode: Mode::Play,
@@ -304,7 +320,9 @@ impl App {
                 self.send(ClientMsg::Move(dir));
             }
             Action::Interact => self.send(ClientMsg::Interact(facing)),
-            Action::Build => self.send(ClientMsg::Build(facing, Tile::Wall)),
+            Action::Build => self.send(ClientMsg::Build(facing, self.build)),
+            Action::PrevBuild => self.build = cycle(self.build, -1),
+            Action::NextBuild => self.build = cycle(self.build, 1),
             Action::Break => self.send(ClientMsg::Break(facing)),
             Action::Chat if !matches!(self.status, Status::Online) => {
                 self.state.push_log(LogLine::new(LogKind::System, NOT_CONNECTED));
@@ -618,6 +636,34 @@ mod tests {
     }
 
     #[test]
+    fn cycle_wraps_both_ways() {
+        let list: Vec<Tile> = buildable().collect();
+        let n = list.len() as i32;
+        for (i, t) in list.iter().enumerate() {
+            assert_eq!(cycle(*t, 1), list[(i + 1) % list.len()]);
+            assert_eq!(cycle(*t, -1), list[(i + list.len() - 1) % list.len()]);
+            assert_eq!(cycle(*t, n), *t);
+            assert_eq!(cycle(*t, -n), *t);
+        }
+    }
+
+    #[test]
+    fn next_build_changes_tile_sent_by_build() {
+        let mut app = App::for_test(Status::Online);
+        let first = buildable().next().unwrap();
+        let second = buildable().nth(1).unwrap_or(first);
+        let facing = app.state.facing();
+        app.act(Action::NextBuild);
+        assert_eq!(app.build, second);
+        assert!(app.sent.try_recv().is_err(), "[ ] must not send anything");
+        app.act(Action::Build);
+        assert_eq!(app.sent.try_recv().unwrap(), ClientMsg::Build(facing, second));
+        app.act(Action::PrevBuild);
+        assert_eq!(app.build, first);
+        assert!(app.sent.try_recv().is_err());
+    }
+
+    #[test]
     fn build_uses_local_facing_after_move() {
         let mut app = App::for_test(Status::Online);
         app.act(Action::Move(Dir::East));
@@ -625,7 +671,7 @@ mod tests {
         app.act(Action::Build);
         assert_eq!(app.sent.try_recv().unwrap(), ClientMsg::Move(Dir::East));
         assert_eq!(app.sent.try_recv().unwrap(), ClientMsg::Move(Dir::North));
-        assert_eq!(app.sent.try_recv().unwrap(), ClientMsg::Build(Dir::North, Tile::Wall));
+        assert_eq!(app.sent.try_recv().unwrap(), ClientMsg::Build(Dir::North, buildable().next().unwrap()));
     }
 
     #[test]
