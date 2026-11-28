@@ -57,5 +57,7 @@ content_table! {
         Wall => TileDef { name: "wall", glyph: glyph('#', '#', "##"), fg: Rgb(200, 190, 170), bg: Some(Rgb(48, 44, 40)), drops: Some(Item::Stone), cost: &[(Item::Stone, 1)], connects: true, ..OBSTACLE },
         Door => TileDef { name: "door", glyph: glyph('+', '▣', "🚪"), fg: Rgb(170, 110, 60), bg: Some(Rgb(70, 45, 25)), drops: Some(Item::Wood), cost: &[(Item::Wood, 2)], toggles_to: Some(Tile::OpenDoor), ..OBSTACLE },
         OpenDoor => TileDef { name: "open door", glyph: glyph('\'', '▢', "▢ "), fg: Rgb(170, 110, 60), bg: Some(Rgb(70, 45, 25)), breaks_into: Some(Tile::Dirt), drops: Some(Item::Wood), toggles_to: Some(Tile::Door), ..GROUND },
+        Planks => TileDef { name: "planks", glyph: glyph('=', '▤', "▤▤"), fg: Rgb(190, 140, 90), bg: Some(Rgb(90, 60, 30)), breaks_into: Some(Tile::Dirt), drops: Some(Item::Wood), cost: &[(Item::Wood, 1)], ..GROUND },
+        Fence => TileDef { name: "fence", glyph: glyph('|', '┼', "┼─"), fg: Rgb(170, 120, 70), drops: Some(Item::Wood), cost: &[(Item::Wood, 1)], ..OBSTACLE },
     }
 }
