@@ -41,6 +41,21 @@ mod tests {
     }
 
     #[test]
+    fn planks_are_walkable_and_buildable() {
+        let def = crate::content::Tile::Planks.def();
+        assert!(def.walkable);
+        assert_eq!(def.cost, &[(Item::Wood, 1)]);
+        assert_eq!(def.drops, Some(Item::Wood));
+    }
+
+    #[test]
+    fn fence_blocks_and_is_buildable() {
+        let def = crate::content::Tile::Fence.def();
+        assert!(!def.walkable);
+        assert!(!def.cost.is_empty());
+    }
+
+    #[test]
     fn flowers_drop_flower() {
         let def = crate::content::Tile::Flowers.def();
         assert_eq!(def.drops, Some(Item::Flower));
