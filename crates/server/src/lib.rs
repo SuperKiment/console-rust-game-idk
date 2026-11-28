@@ -13,7 +13,6 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime};
 
-use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -39,7 +38,7 @@ pub struct Options {
 pub async fn run(listener: TcpListener, opts: Options, shutdown: impl Future<Output = ()>) -> io::Result<()> {
     let mut game = load(&opts)?;
     let (events_tx, mut events) = mpsc::unbounded_channel();
-    let console = tokio::spawn(read_console(events_tx.clone()));
+    read_console(events_tx.clone());
     let acceptor = tokio::spawn(net::accept_loop(listener, events_tx));
 
     let mut tick = interval(TICK);
@@ -67,7 +66,6 @@ pub async fn run(listener: TcpListener, opts: Options, shutdown: impl Future<Out
         }
     }
     acceptor.abort();
-    console.abort();
     // Pas deux écritures sur le même fichier temporaire : on attend celle en cours.
     if let Some(handle) = writing.take()
         && let Err(e) = handle.await
@@ -113,14 +111,18 @@ fn save(opts: &Options, game: &Game) {
 }
 
 /// Lit l'entrée standard ligne par ligne et la pousse dans la boucle de jeu (console de l'hôte).
+/// Thread `std` détaché et pas `tokio::io::stdin` : une lecture de stdin ne s'annule pas, et celle
+/// de tokio (pool bloquant) ferait attendre l'arrêt du runtime jusqu'au prochain Entrée.
 /// S'arrête sans bruit à la fin de l'entrée ou sur erreur (docker sans tty : stdin fermé).
-async fn read_console(events: mpsc::UnboundedSender<Event>) {
-    let mut lines = BufReader::new(tokio::io::stdin()).lines();
-    while let Ok(Some(line)) = lines.next_line().await {
-        if events.send(Event::Console(line)).is_err() {
-            break;
+fn read_console(events: mpsc::UnboundedSender<Event>) {
+    std::thread::spawn(move || {
+        for line in std::io::stdin().lines() {
+            let Ok(line) = line else { break };
+            if events.send(Event::Console(line)).is_err() {
+                break;
+            }
         }
-    }
+    });
 }
 
 /// Autosave (ou `/save` de l'hôte si `manual`) : l'instantané (`to_save`) est pris dans la boucle de jeu, l'écriture (fsync) part dans
