@@ -98,7 +98,7 @@ stateDiagram-v2
 | Champ | Alimenté par |
 |---|---|
 | `me`, `name`, `seed` | `Welcome` |
-| `chunks` (privé) | `Chunk` (ignoré si invalide), `TileChanged` ; purge au-delà de `KEEP_CHUNKS` (4, `crates/shared/src/protocol.rs`) chunks de la position du joueur |
+| `chunks` (privé) | `Chunk` (ignoré si invalide), `TileChanged` ; purge au-delà de `KEEP_CHUNKS` (4, `crates/shared/src/protocol.rs`) chunks de la position du joueur, faite à chaque `Entities` et pas au `Chunk` (au tick d'un `/tp`, le serveur envoie les chunks de la destination avant la nouvelle position) |
 | `entities` | `Entities` (remplacement complet à chaque tick) |
 | `online` | `Online` |
 | `inventory` | `Inventory` (remplacement complet), vidé au `Welcome` ; affiché par le panneau `bag` et la barre d'état incognito (`deps:`) |

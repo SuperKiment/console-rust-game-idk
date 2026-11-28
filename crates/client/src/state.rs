@@ -69,9 +69,6 @@ impl GameState {
             }
             ServerMsg::Chunk(c) if c.is_valid() => {
                 self.chunks.insert(c.pos, c);
-                if let Some(me) = self.my_pos() {
-                    self.chunks.retain(|cp, _| cp.dist(me.chunk()) <= KEEP_CHUNKS);
-                }
             }
             ServerMsg::Chunk(_) => {}
             ServerMsg::TileChanged { pos, tile } => {
@@ -79,7 +76,14 @@ impl GameState {
                     c.tiles[pos.local_index()] = tile;
                 }
             }
-            ServerMsg::Entities(es) => self.entities = es,
+            ServerMsg::Entities(es) => {
+                self.entities = es;
+                // Élagage ici et pas au `Chunk` : le serveur envoie les chunks d'une destination
+                // (téléport) avant la nouvelle position.
+                if let Some(me) = self.my_pos() {
+                    self.chunks.retain(|cp, _| cp.dist(me.chunk()) <= KEEP_CHUNKS);
+                }
+            }
             ServerMsg::Log(line) => self.push_log(line),
             ServerMsg::Effect { pos, effect } => {
                 let until = now + Duration::from_millis(effect.def().duration_ms as u64);
@@ -280,9 +284,29 @@ mod tests {
         let mut s = state_at(Pos::new(0, 0), now);
         s.apply(ServerMsg::Chunk(chunk(KEEP_CHUNKS, 0)), now);
         s.apply(ServerMsg::Chunk(chunk(KEEP_CHUNKS + 1, 0)), now);
+        // L'élagage a lieu à la position suivante.
+        let look = Look::Player { name: "a".into(), color: 0 };
+        s.apply(
+            ServerMsg::Entities(vec![EntityView { id: 1, pos: Pos::new(0, 0), facing: Dir::North, look }]),
+            now,
+        );
         let tile_x = |c: i32| Pos::new(c * idk_shared::geo::CHUNK_SIZE, 0);
         assert!(s.tile(tile_x(KEEP_CHUNKS)).is_some(), "à KEEP_CHUNKS : gardé");
         assert!(s.tile(tile_x(KEEP_CHUNKS + 1)).is_none(), "au-delà de KEEP_CHUNKS : évincé");
+    }
+
+    #[test]
+    fn teleport_keeps_chunks_received_before_position() {
+        let now = Instant::now();
+        let mut s = state_at(Pos::new(0, 0), now);
+        s.apply(ServerMsg::Chunk(chunk(0, 0)), now);
+        s.apply(ServerMsg::Chunk(chunk(10, 0)), now);
+        let far = Pos::new(10 * idk_shared::geo::CHUNK_SIZE, 0);
+        assert!(s.tile(far).is_some(), "chunk de destination gardé avant la position");
+        let look = Look::Player { name: "a".into(), color: 0 };
+        s.apply(ServerMsg::Entities(vec![EntityView { id: 1, pos: far, facing: Dir::North, look }]), now);
+        assert!(s.tile(far).is_some(), "chunk du joueur gardé");
+        assert!(s.tile(Pos::new(0, 0)).is_none(), "ancien chunk élagué");
     }
 
     #[test]
