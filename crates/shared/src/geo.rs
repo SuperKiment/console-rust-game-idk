@@ -38,6 +38,19 @@ impl Pos {
         (self.x - other.x).abs().max((self.y - other.y).abs())
     }
 
+    /// Boussole de `self` vers `to` : « N », « NE », « E », « SE », « S », « SW », « W » ou « NW »
+    /// (secteurs de 45°, y croît vers le sud). Même position : « here ».
+    pub fn compass(self, to: Pos) -> &'static str {
+        let (dx, dy) = ((to.x - self.x) as f64, (to.y - self.y) as f64);
+        if dx == 0.0 && dy == 0.0 {
+            return "here";
+        }
+        // Angle en degrés, 0 = est, croissant vers le sud (sens horaire à l'écran).
+        let angle = dy.atan2(dx).to_degrees();
+        const NAMES: [&str; 8] = ["E", "SE", "S", "SW", "W", "NW", "N", "NE"];
+        NAMES[((angle / 45.0).round() as i32).rem_euclid(8) as usize]
+    }
+
     /// Cardinal direction that best moves `self` toward `target`, if not already there.
     pub fn dir_to(self, target: Pos) -> Option<Dir> {
         let (dx, dy) = (target.x - self.x, target.y - self.y);
@@ -140,5 +153,32 @@ mod tests {
         assert_eq!(o.dir_to(Pos::new(5, 2)), Some(Dir::East));
         assert_eq!(o.dir_to(Pos::new(1, -4)), Some(Dir::North));
         assert_eq!(o.dir_to(o), None);
+    }
+
+    #[test]
+    fn compass_eight_directions() {
+        let o = Pos::new(0, 0);
+        for ((x, y), name) in [
+            ((0, -5), "N"),
+            ((5, -5), "NE"),
+            ((5, 0), "E"),
+            ((5, 5), "SE"),
+            ((0, 5), "S"),
+            ((-5, 5), "SW"),
+            ((-5, 0), "W"),
+            ((-5, -5), "NW"),
+        ] {
+            assert_eq!(o.compass(Pos::new(x, y)), name, "({x}, {y})");
+        }
+    }
+
+    #[test]
+    fn compass_nearly_aligned_and_same_pos() {
+        let o = Pos::new(3, 3);
+        assert_eq!(o.compass(Pos::new(13, 4)), "E");
+        assert_eq!(o.compass(Pos::new(4, 13)), "S");
+        assert_eq!(o.compass(Pos::new(-7, 2)), "W");
+        assert_eq!(o.compass(Pos::new(2, -7)), "N");
+        assert_eq!(o.compass(o), "here");
     }
 }

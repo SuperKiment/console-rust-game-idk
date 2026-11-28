@@ -13,5 +13,6 @@ content_table! {
         Heart => EffectDef { glyph: glyph('<', '♥', "💖"), fg: Rgb(255, 95, 135), duration_ms: 900 },
         Sound => EffectDef { glyph: glyph('!', '♪', "🎵"), fg: Rgb(255, 255, 175), duration_ms: 700 },
         Dust => EffectDef { glyph: glyph('*', '✶', "💥"), fg: Rgb(200, 180, 140), duration_ms: 350 },
+        Marker => EffectDef { glyph: glyph('X', '⌖', "📍"), fg: Rgb(255, 80, 80), duration_ms: 3000 },
     }
 }

@@ -4,16 +4,16 @@
 | 21-35 | Modules |
 | 36-58 | Boucle de jeu |
 | 59-70 | — Tick (20 Hz) |
-| 71-82 | — Actions des joueurs |
-| 83-99 | — Commandes de chat |
-| 100-112 | — Console de l'hôte (stdin) |
-| 113-121 | — Animaux et index de tuiles |
-| 122-136 | — Sessions et déconnexions |
-| 137-163 | Monde par chunks |
-| 164-170 | — Streaming de chunks |
-| 171-187 | IA des animaux (paramétrique) |
-| 188-217 | Sauvegarde |
-| 218-222 | Docs liées |
+| 71-84 | — Actions des joueurs |
+| 85-101 | — Commandes de chat |
+| 102-114 | — Console de l'hôte (stdin) |
+| 115-123 | — Animaux et index de tuiles |
+| 124-138 | — Sessions et déconnexions |
+| 139-165 | Monde par chunks |
+| 166-172 | — Streaming de chunks |
+| 173-189 | IA des animaux (paramétrique) |
+| 190-219 | Sauvegarde |
+| 220-224 | Docs liées |
 # Serveur : architecture
 
 > Vérifié le 2026-11-28 depuis `crates/server/src/` (`lib.rs`, `main.rs`, `net.rs`, `game.rs`, `ai.rs`, `save.rs`, `rng.rs`, `world/`). Fiche : [vue-ensemble.md](vue-ensemble.md).
@@ -71,6 +71,8 @@ Un `Move` reçu hors cooldown (`MOVE_COOLDOWN` = 90 ms) s'exécute tout de suite
 ### Actions des joueurs
 
 Dans `Game::handle` : `Interact`, `Build`, `Break` visent la tuile adjacente dans la direction donnée. `Build(dir, tile)` refuse une tuile sans `cost` (« You can't build that. »), sinon pose `tile` (le client envoie toujours `Wall`) sur une tuile praticable, libre de joueur et d'animal, et consomme son `cost` (`remove_items`, tout ou rien ; 1 pierre pour `Wall`) puis envoie l'inventaire. Coût manquant : tuile inchangée, journal « You need 1 stone. ». `Break` utilise `breaks_into` de la définition de la tuile ; si la définition a un `drops`, `add_item` ajoute 1 objet à `Player.inventory` et le journal dit « You break the tree and get 1 wood. ». Pile pleine (`MAX_STACK` = 999) : objet perdu, journal « Your bag is full of wood. ». `set_tile` notifie par `TileChanged` les joueurs qui détiennent le chunk, plus un effet `Dust`.
+
+`Mark` (sans cible) : si `now >= Player.next_mark` (`MARK_COOLDOWN` = 2 s, sinon ignoré sans log ni effet), émet l'effet `Marker` sur la tuile du joueur puis envoie à chaque joueur en ligne un log `System` : « You mark your position (x, y). » pour l'émetteur, « alice is at (x, y), 42 tiles NE. » pour les autres (distance `Pos::dist`, direction `Pos::compass` du destinataire vers l'émetteur ; « alice is right here. » si distance < 2).
 
 Avant `Interact`, `Build` ou `Break`, un `pending_move` éventuel est appliqué immédiatement (`try_move`, cooldown ignoré pour ce move, `next_move` remis à jour) : l'action part de la position que le client croit avoir, l'ordre d'envoi est respecté. `Interact` cherche d'abord un joueur sur la tuile visée (salut), puis un animal (caresse) : un animal peut partager la tuile d'un joueur. Sinon, si la tuile a `toggles_to` (porte), `set_tile` la bascule et le journal dit « You open the door. » / « You close the door. » ; sinon « X ahead. ».
 
