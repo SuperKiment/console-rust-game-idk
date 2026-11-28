@@ -86,6 +86,8 @@ pub struct Player {
     pub pos: Pos,
     pub facing: Dir,
     pub inventory: Inventory,
+    /// Position mémorisée par `/sethome`.
+    pub home: Option<Pos>,
     tx: Sender<ServerMsg>,
     /// Passe à vrai quand la file d'envoi est pleine ; `tick` déconnecte alors le joueur.
     overflow: Cell<bool>,
@@ -132,8 +134,8 @@ pub struct Game {
     animals: HashMap<EntityId, Animal>,
     /// Tuile -> animal qui l'occupe (au plus un par tuile). Rend [`Game::animal_at`] O(1).
     animal_index: HashMap<Pos, EntityId>,
-    /// Last known place and bag of players who are not connected, by name.
-    pub offline: HashMap<String, (Pos, Dir, Inventory)>,
+    /// Last known place, bag and home of players who are not connected, by name.
+    pub offline: HashMap<String, (Pos, Dir, Inventory, Option<Pos>)>,
     pub next_id: EntityId,
     pub rng: Rng,
 }
@@ -203,18 +205,18 @@ impl Game {
         // la nouvelle connexion remplace l'ancienne et reprend son identité, sa position et ses animaux.
         let old = self.conn_of(&name).and_then(|c| self.players.remove(&c));
         let replaced = old.is_some();
-        let (id, pos, facing, inventory) = match old {
+        let (id, pos, facing, inventory, home) = match old {
             Some(old) => {
                 // Un tx plein fait échouer l'envoi : l'ancienne connexion est fermée à la chute du tx.
                 old.send(ServerMsg::Rejected(format!("name {name} used by a new connection")));
-                (old.id, old.pos, old.facing, old.inventory)
+                (old.id, old.pos, old.facing, old.inventory, old.home)
             }
             None => {
-                let (pos, facing, inventory) = self
+                let (pos, facing, inventory, home) = self
                     .offline
                     .remove(&name)
-                    .unwrap_or_else(|| (self.world.spawn_point(), Dir::South, Inventory::new()));
-                (self.alloc_id(), pos, facing, inventory)
+                    .unwrap_or_else(|| (self.world.spawn_point(), Dir::South, Inventory::new(), None));
+                (self.alloc_id(), pos, facing, inventory, home)
             }
         };
         // Le monde a pu changer depuis (mur posé sur la position ou sur le point d'apparition).
@@ -228,6 +230,7 @@ impl Game {
             pos,
             facing,
             inventory,
+            home,
             tx,
             overflow: Cell::new(false),
             sent: HashSet::new(),
@@ -269,7 +272,7 @@ impl Game {
         if let Some(p) = self.players.remove(&conn) {
             tracing::info!(name = %p.name, "player left");
             self.broadcast_log(LogKind::System, format!("{} left the world.", p.name));
-            self.offline.insert(p.name, (p.pos, p.facing, p.inventory));
+            self.offline.insert(p.name, (p.pos, p.facing, p.inventory, p.home));
             self.broadcast_online();
         }
     }
@@ -1082,6 +1085,21 @@ pub(crate) mod tests {
         g.players.get_mut(&1).unwrap().inventory = vec![(Item::Fiber, 4)];
         join(&mut g, 2, "alice", now);
         assert_eq!(g.players[&2].inventory, vec![(Item::Fiber, 4)]);
+    }
+
+    #[test]
+    fn home_survives_leave_join_and_session_replacement() {
+        let now = Instant::now();
+        let mut g = Game::new(World::new(5));
+        join(&mut g, 1, "alice", now);
+        let h = Pos::new(12, -3);
+        g.players.get_mut(&1).unwrap().home = Some(h);
+        g.event(Event::Leave(1), now);
+        assert_eq!(g.offline["alice"].3, Some(h));
+        join(&mut g, 2, "alice", now);
+        assert_eq!(g.players[&2].home, Some(h));
+        join(&mut g, 3, "alice", now);
+        assert_eq!(g.players[&3].home, Some(h));
     }
 
     #[test]
