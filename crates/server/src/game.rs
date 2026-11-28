@@ -30,6 +30,8 @@ pub const SEND_QUEUE: usize = 256;
 const MAX_SPAWN_SEARCH: i32 = 32;
 /// Rayon (tuiles) de recherche d'une place libre pour un animal prévu dont la tuile est prise.
 const SPAWN_SLIDE: i32 = 2;
+/// Délai avant de réessayer une repousse bloquée par un joueur ou un animal sur la tuile.
+const REGROW_RETRY: Duration = Duration::from_secs(10);
 
 /// Secondes écoulées depuis l'epoch Unix (0 si l'horloge est avant l'epoch).
 pub fn unix_now() -> u64 {
@@ -145,6 +147,9 @@ pub struct Game {
     pub offline: HashMap<String, (Pos, Dir, Inventory, Option<Pos>, u64)>,
     pub next_id: EntityId,
     pub rng: Rng,
+    /// Repousses en attente : échéance et tuile (voir `TileDef::regrow`). Non sauvegardé :
+    /// `from_save` la reconstruit avec le délai complet.
+    regrow: Vec<(Instant, Pos)>,
 }
 
 impl Game {
@@ -158,6 +163,7 @@ impl Game {
             offline: HashMap::new(),
             next_id: 1,
             rng,
+            regrow: Vec::new(),
         }
     }
 
@@ -183,6 +189,7 @@ impl Game {
         for (conn, dir) in ready {
             self.try_move(conn, dir, now);
         }
+        self.grow_back(now);
         crate::ai::step(self, now);
         let conns: Vec<ConnId> = self.players.keys().copied().collect();
         for conn in conns {
@@ -325,7 +332,7 @@ impl Game {
             ClientMsg::Break(dir) => {
                 p.facing = dir;
                 let target = p.pos.step(dir);
-                self.break_tile(conn, target);
+                self.break_tile(conn, target, now);
             }
             ClientMsg::Mark => {
                 if now >= p.next_mark {
@@ -425,11 +432,12 @@ impl Game {
         }
     }
 
-    fn break_tile(&mut self, conn: ConnId, target: Pos) {
+    fn break_tile(&mut self, conn: ConnId, target: Pos, now: Instant) {
         let def = self.world.tile(target).def();
         match def.breaks_into {
             Some(into) => {
                 self.set_tile(target, into);
+                self.schedule_regrow(target, now);
                 let Some(item) = def.drops else {
                     self.tell(conn, LogKind::Info, format!("You break the {}.", def.name));
                     return;
@@ -445,6 +453,34 @@ impl Game {
                 }
             }
             None => self.tell(conn, LogKind::Info, format!("Nothing to break here ({}).", def.name)),
+        }
+    }
+
+    /// Si la tuile en `pos` repousse (`TileDef::regrow`), planifie sa repousse à `now` + délai.
+    pub fn schedule_regrow(&mut self, pos: Pos, now: Instant) {
+        if let Some((_, secs)) = self.world.tile(pos).def().regrow {
+            self.regrow.push((now + Duration::from_secs(secs.into()), pos));
+        }
+    }
+
+    /// Fait repousser les tuiles échues. Une tuile changée entre-temps (mur posé, cassée) est oubliée.
+    /// Un joueur ou un animal sur la tuile reporte la repousse si la tuile cible est un obstacle.
+    fn grow_back(&mut self, now: Instant) {
+        let mut due = Vec::new();
+        self.regrow.retain(|&(at, pos)| {
+            let is_due = at <= now;
+            if is_due {
+                due.push(pos);
+            }
+            !is_due
+        });
+        for pos in due {
+            let Some((into, _)) = self.world.tile(pos).def().regrow else { continue };
+            if !into.def().walkable && (self.player_at(pos) || self.animal_at(pos).is_some()) {
+                self.regrow.push((now + REGROW_RETRY, pos));
+                continue;
+            }
+            self.set_tile(pos, into);
         }
     }
 
@@ -1068,6 +1104,78 @@ pub(crate) mod tests {
         let logs = break_east(&mut g, &mut rx, Tile::TallGrass, now);
         assert!(g.players[&1].inventory.is_empty());
         assert_eq!(logs, vec!["Nothing to break here (tall grass).".to_string()]);
+    }
+
+    /// Casse un buisson à baies à l'est d'alice ; renvoie sa tuile, devenue `BushEmpty` et planifiée.
+    fn break_bush(g: &mut Game, rx: &mut Receiver<ServerMsg>, now: Instant) -> Pos {
+        let o = g.players[&1].pos;
+        break_east(g, rx, Tile::BerryBush, now);
+        let bush = Pos::new(o.x + 1, o.y);
+        assert_eq!(g.world.tile(bush), Tile::BushEmpty);
+        assert_eq!(g.regrow.len(), 1);
+        bush
+    }
+
+    #[test]
+    fn broken_bush_grows_back_after_delay() {
+        let now = Instant::now();
+        let mut g = Game::new(World::new(5));
+        let mut rx = join_rx(&mut g, 1, "alice", now);
+        g.clear_animals();
+        let bush = break_bush(&mut g, &mut rx, now);
+        drain(&mut rx);
+        g.tick(now + Duration::from_secs(299));
+        assert_eq!(g.world.tile(bush), Tile::BushEmpty);
+        g.tick(now + Duration::from_secs(300));
+        assert_eq!(g.world.tile(bush), Tile::BerryBush);
+        assert!(g.regrow.is_empty());
+        assert!(drain(&mut rx).contains(&ServerMsg::TileChanged { pos: bush, tile: Tile::BerryBush }));
+    }
+
+    #[test]
+    fn bush_replaced_before_deadline_does_not_grow_back() {
+        let now = Instant::now();
+        let mut g = Game::new(World::new(5));
+        let mut rx = join_rx(&mut g, 1, "alice", now);
+        g.clear_animals();
+        let bush = break_bush(&mut g, &mut rx, now);
+        g.world.set_tile(bush, Tile::Wall);
+        g.tick(now + Duration::from_secs(300));
+        assert_eq!(g.world.tile(bush), Tile::Wall);
+        assert!(g.regrow.is_empty(), "entry forgotten");
+    }
+
+    #[test]
+    fn regrow_waits_while_player_stands_on_the_bush() {
+        let now = Instant::now();
+        let mut g = Game::new(World::new(5));
+        let mut rx = join_rx(&mut g, 1, "alice", now);
+        g.clear_animals();
+        let bush = break_bush(&mut g, &mut rx, now);
+        g.try_move(1, Dir::East, now);
+        assert_eq!(g.players[&1].pos, bush, "a broken bush is walkable");
+        let due = now + Duration::from_secs(300);
+        g.tick(due);
+        assert_eq!(g.world.tile(bush), Tile::BushEmpty, "player in the way");
+        assert_eq!(g.regrow, vec![(due + REGROW_RETRY, bush)]);
+        g.try_move(1, Dir::West, due);
+        g.tick(due + REGROW_RETRY - Duration::from_secs(1));
+        assert_eq!(g.world.tile(bush), Tile::BushEmpty, "retry not due yet");
+        g.tick(due + REGROW_RETRY);
+        assert_eq!(g.world.tile(bush), Tile::BerryBush);
+    }
+
+    #[test]
+    fn regrow_waits_while_animal_stands_on_the_bush() {
+        let now = Instant::now();
+        let mut g = Game::new(World::new(5));
+        let mut rx = join_rx(&mut g, 1, "alice", now);
+        g.clear_animals();
+        let bush = break_bush(&mut g, &mut rx, now);
+        g.insert_animal(Species::Cow, bush, None, now).unwrap();
+        g.tick(now + Duration::from_secs(300));
+        assert_eq!(g.world.tile(bush), Tile::BushEmpty, "animal in the way");
+        assert_eq!(g.regrow.len(), 1);
     }
 
     #[test]

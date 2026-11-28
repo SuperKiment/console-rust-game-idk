@@ -14,6 +14,8 @@ pub enum Action {
     /// `]` : tuile à construire suivante.
     NextBuild,
     Break,
+    /// `p` : signale sa position à tous (`ClientMsg::Mark`).
+    Mark,
     Chat,
     ToggleIncognito,
     /// F1 : ouvre l'écran d'aide (touches et légende des glyphes).
@@ -61,6 +63,7 @@ pub const BINDINGS: &[Binding] = &[
     Binding { keys: &[Char('[')], action: Action::PrevBuild, help: Some(("[ ]", "choose block")) },
     Binding { keys: &[Char(']')], action: Action::NextBuild, help: None },
     Binding { keys: &[Char('x')], action: Action::Break, help: Some(("x", "break")) },
+    Binding { keys: &[Char('p')], action: Action::Mark, help: Some(("p", "mark position")) },
     Binding { keys: &[Enter, Char('t')], action: Action::Chat, help: Some(("t enter", "chat")) },
     Binding { keys: &[F(1)], action: Action::Help, help: Some(("F1", "help")) },
     Binding { keys: &[F(2)], action: Action::ToggleIncognito, help: Some(("F2", "incognito")) },

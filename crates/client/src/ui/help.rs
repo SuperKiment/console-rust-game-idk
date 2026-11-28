@@ -137,6 +137,7 @@ fn action_label(action: Action) -> String {
         Action::PrevBuild => "previous block".into(),
         Action::NextBuild => "next block".into(),
         Action::Break => "break".into(),
+        Action::Mark => "mark position".into(),
         Action::Chat => "chat".into(),
         Action::ToggleIncognito => "incognito".into(),
         Action::Help => "help".into(),

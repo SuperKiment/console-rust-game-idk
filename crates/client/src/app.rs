@@ -324,6 +324,7 @@ impl App {
             Action::PrevBuild => self.build = cycle(self.build, -1),
             Action::NextBuild => self.build = cycle(self.build, 1),
             Action::Break => self.send(ClientMsg::Break(facing)),
+            Action::Mark => self.send(ClientMsg::Mark),
             Action::Chat if !matches!(self.status, Status::Online) => {
                 self.state.push_log(LogLine::new(LogKind::System, NOT_CONNECTED));
             }
@@ -645,6 +646,13 @@ mod tests {
             assert_eq!(cycle(*t, n), *t);
             assert_eq!(cycle(*t, -n), *t);
         }
+    }
+
+    #[test]
+    fn mark_sends_mark() {
+        let mut app = App::for_test(Status::Online);
+        app.act(Action::Mark);
+        assert_eq!(app.sent.try_recv().unwrap(), ClientMsg::Mark);
     }
 
     #[test]

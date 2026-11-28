@@ -220,6 +220,21 @@ impl Game {
                 tracing::warn!(?pos, "save has two animals on one tile, one dropped");
             }
         }
+        // Les échéances de repousse ne sont pas sauvegardées : délai complet après redémarrage.
+        let regrowing: Vec<Pos> = g
+            .world
+            .modified_chunks()
+            .flat_map(|(cp, tiles)| {
+                tiles
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, t)| t.def().regrow.is_some())
+                    .map(move |(i, _)| cp.tile_pos(i))
+            })
+            .collect();
+        for pos in regrowing {
+            g.schedule_regrow(pos, now);
+        }
         g
     }
 }
@@ -335,6 +350,21 @@ mod tests {
         assert_eq!(g.animals().len(), 2);
         assert!(g.animal_at(a).is_some() && g.animal_at(b).is_some());
         g.assert_animal_index();
+    }
+
+    #[test]
+    fn loaded_empty_bush_is_scheduled_to_regrow() {
+        let now = Instant::now();
+        let mut data = sample();
+        let cp = ChunkPos::new(3, -2);
+        let mut tiles = vec![Tile::Grass; CHUNK_AREA];
+        tiles[5] = Tile::BushEmpty;
+        data.chunks = vec![(cp, tiles)];
+        let mut g = Game::from_save(data, now);
+        let pos = cp.tile_pos(5);
+        g.tick(now + std::time::Duration::from_secs(300));
+        assert_eq!(g.world.tile(pos), Tile::BerryBush, "full delay after loading");
+        assert_eq!(g.world.tile(cp.tile_pos(6)), Tile::Grass);
     }
 
     #[test]
