@@ -17,6 +17,8 @@ pub struct TileDef {
     pub cost: &'static [(Item, u16)],
     /// Rendered with box-drawing lines joined to neighbouring tiles of the same kind.
     pub connects: bool,
+    /// Interact switches to this tile (`None` = nothing happens).
+    pub toggles_to: Option<Tile>,
 }
 
 /// Defaults for a plain walkable ground tile; rows override what differs.
@@ -30,6 +32,7 @@ const GROUND: TileDef = TileDef {
     drops: None,
     cost: &[],
     connects: false,
+    toggles_to: None,
 };
 
 /// Defaults for an obstacle that can be broken back into dirt.
@@ -52,5 +55,7 @@ content_table! {
         Cactus => TileDef { name: "cactus", glyph: glyph('!', '¥', "🌵"), fg: Rgb(110, 180, 80), breaks_into: Some(Tile::Sand), drops: Some(Item::Fiber), ..OBSTACLE },
         Rock => TileDef { name: "rock", glyph: glyph('^', '▲', "▲▲"), fg: Rgb(160, 150, 140), bg: Some(Rgb(40, 38, 36)), breaks_into: Some(Tile::Gravel), drops: Some(Item::Stone), ..OBSTACLE },
         Wall => TileDef { name: "wall", glyph: glyph('#', '#', "##"), fg: Rgb(200, 190, 170), bg: Some(Rgb(48, 44, 40)), drops: Some(Item::Stone), cost: &[(Item::Stone, 1)], connects: true, ..OBSTACLE },
+        Door => TileDef { name: "door", glyph: glyph('+', '▣', "🚪"), fg: Rgb(170, 110, 60), bg: Some(Rgb(70, 45, 25)), drops: Some(Item::Wood), cost: &[(Item::Wood, 2)], toggles_to: Some(Tile::OpenDoor), ..OBSTACLE },
+        OpenDoor => TileDef { name: "open door", glyph: glyph('\'', '▢', "▢ "), fg: Rgb(170, 110, 60), bg: Some(Rgb(70, 45, 25)), breaks_into: Some(Tile::Dirt), drops: Some(Item::Wood), toggles_to: Some(Tile::Door), ..GROUND },
     }
 }

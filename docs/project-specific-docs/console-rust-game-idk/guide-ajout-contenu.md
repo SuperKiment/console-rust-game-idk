@@ -2,8 +2,8 @@
 | Lignes | Section |
 |---|---|
 | 22-28 | Glyphes |
-| 29-38 | Exemples |
-| 39-41 | Tests de non-régression |
+| 29-40 | Exemples |
+| 41-43 | Tests de non-régression |
 # Ajouter du contenu (tuiles, biomes, animaux, effets, objets)
 
 Tout le contenu est déclaré dans des tables de `crates/shared/src/content/`, via la macro `content_table!` (`content/mod.rs`). Une ligne de table génère à la fois la variante d'enum (identifiant réseau et de sauvegarde) et sa définition : impossible de les désynchroniser.
@@ -13,7 +13,7 @@ Tout le contenu est déclaré dans des tables de `crates/shared/src/content/`, v
 
 | Table | Fichier | Ce qu'une ligne définit |
 |---|---|---|
-| `Tile` / `TILES` | `content/tiles.rs` | nom, glyphe (ASCII / Unicode / large), couleur, fond optionnel (`bg`, sinon fond du biome), praticable, ce qu'elle devient une fois cassée, objet donné quand on la casse (`drops`), coût de construction (`cost`, liste vide = non constructible), raccord en traits de boîte |
+| `Tile` / `TILES` | `content/tiles.rs` | nom, glyphe (ASCII / Unicode / large), couleur, fond optionnel (`bg`, sinon fond du biome), praticable, ce qu'elle devient une fois cassée, objet donné quand on la casse (`drops`), coût de construction (`cost`, liste vide = non constructible), raccord en traits de boîte, tuile vers laquelle `interact` bascule (`toggles_to`, `None` par défaut) |
 | `Biome` / `BIOMES` | `content/biomes.rs` | couleur de sol, bande d'altitude, climat préféré (température, humidité), palette pondérée de tuiles, apparitions d'animaux par chunk |
 | `Species` / `SPECIES` | `content/species.rs` | nom, glyphe, couleur, paramètres d'IA (`Ai`), sons, réactions aux caresses |
 | `Effect` / `EFFECTS` | `content/effects.rs` | glyphe, couleur et durée d'un effet visuel éphémère |
@@ -35,6 +35,8 @@ Nouveau biome : une ligne dans `BIOMES`. Les biomes terrestres partagent la band
 Nouvel objet : une ligne dans `ITEMS` (nom unique, glyphe, couleur), à la fin de la table. Pour qu'une tuile le donne quand on la casse, mettre `drops: Some(Item::X)` sur sa ligne de `TILES` : elle doit aussi avoir `breaks_into: Some(_)` (test `dropping_tiles_are_breakable`). Le serveur donne l'objet au joueur qui casse la tuile (`Game::break_tile`, `add_item`) et lui envoie son inventaire (`ServerMsg::Inventory`).
 
 Tuile constructible : `cost: &[(Item::X, n)]` sur sa ligne de `TILES` (vide par défaut = non constructible). Elle doit aussi avoir `breaks_into: Some(_)` (test `buildable_tiles_are_breakable`). `Game::build` retire le coût du sac (`remove_items`, tout ou rien) avant de poser la tuile demandée par `ClientMsg::Build(dir, tile)` ; une tuile sans coût est refusée.
+
+Tuile interactive (porte) : `toggles_to: Some(Tile::X)` ; `Interact` la remplace par `X` (journal « You open the door. » si `X` est praticable, « You close the door. » sinon). Deux lignes réciproques suffisent (`Door` <-> `OpenDoor`) ; ajouter en fin de table (discriminants = format réseau/sauvegarde).
 
 ## Tests de non-régression
 
