@@ -19,6 +19,8 @@ pub struct TileDef {
     pub connects: bool,
     /// Interact switches to this tile (`None` = nothing happens).
     pub toggles_to: Option<Tile>,
+    /// Grows back into this tile after this many seconds (`None` = stays as is).
+    pub regrow: Option<(Tile, u32)>,
 }
 
 /// Defaults for a plain walkable ground tile; rows override what differs.
@@ -33,6 +35,7 @@ const GROUND: TileDef = TileDef {
     cost: &[],
     connects: false,
     toggles_to: None,
+    regrow: None,
 };
 
 /// Defaults for an obstacle that can be broken back into dirt.
@@ -60,7 +63,7 @@ content_table! {
         Planks => TileDef { name: "planks", glyph: glyph('=', '▤', "▤▤"), fg: Rgb(190, 140, 90), bg: Some(Rgb(90, 60, 30)), breaks_into: Some(Tile::Dirt), drops: Some(Item::Wood), cost: &[(Item::Wood, 1)], ..GROUND },
         Fence => TileDef { name: "fence", glyph: glyph('|', '┼', "┼─"), fg: Rgb(170, 120, 70), drops: Some(Item::Wood), cost: &[(Item::Wood, 1)], ..OBSTACLE },
         BerryBush => TileDef { name: "berry bush", glyph: glyph('&', '♧', "🫐"), fg: Rgb(200, 60, 90), breaks_into: Some(Tile::BushEmpty), drops: Some(Item::Berry), ..OBSTACLE },
-        BushEmpty => TileDef { name: "bare bush", glyph: glyph('&', '♧', "🌿"), fg: Rgb(70, 110, 60), breaks_into: Some(Tile::Grass), ..GROUND },
+        BushEmpty => TileDef { name: "bare bush", glyph: glyph('&', '♧', "🌿"), fg: Rgb(70, 110, 60), breaks_into: Some(Tile::Grass), regrow: Some((Tile::BerryBush, 300)), ..GROUND },
         Mushroom => TileDef { name: "mushroom", glyph: glyph(';', 'τ', "🍄"), fg: Rgb(200, 160, 120), breaks_into: Some(Tile::Grass), drops: Some(Item::Mushroom), ..GROUND },
     }
 }
