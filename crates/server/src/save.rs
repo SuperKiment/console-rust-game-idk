@@ -9,7 +9,7 @@ use idk_shared::geo::{CHUNK_AREA, ChunkPos, Dir, Pos};
 use idk_shared::protocol::EntityId;
 use serde::{Deserialize, Serialize};
 
-use crate::game::{Game, Inventory};
+use crate::game::{Game, Inventory, unix_now};
 use crate::world::World;
 
 /// Version courante du format. Ajouter une version (3 étapes) :
@@ -18,7 +18,7 @@ use crate::world::World;
 /// 3. ajouter dans [`decode`] le bras `N => v<N>::SaveData décodé puis converti en SaveData`.
 ///
 /// `version` doit rester le premier champ de `SaveData` : [`decode`] le lit seul en tête.
-pub const SAVE_VERSION: u32 = 3;
+pub const SAVE_VERSION: u32 = 4;
 const FILE: &str = "world.bin";
 
 /// Format de la version 1, figé : ne plus le modifier (sert uniquement à décoder les vieilles saves).
@@ -56,34 +56,108 @@ mod v2 {
     }
 }
 
+/// Format de la version 3, figé : ne plus le modifier (sert uniquement à décoder les vieilles saves).
+/// Alias d'inventaire local (pas celui de `game`) pour que le format ne bouge jamais.
+mod v3 {
+    use super::*;
+
+    type Inventory = Vec<(Item, u16)>;
+
+    #[derive(Serialize, Deserialize)]
+    pub struct SaveData {
+        pub version: u32,
+        pub seed: u64,
+        pub next_id: EntityId,
+        pub players: Vec<(String, Pos, Dir, Inventory, Option<Pos>)>,
+        pub chunks: Vec<(ChunkPos, Vec<Tile>)>,
+        pub spawned: Vec<ChunkPos>,
+        pub animals: Vec<(Species, Pos, Option<String>)>,
+    }
+}
+
+/// Joueur d'une save antérieure : `last_seen` = heure du chargement.
+fn player_from_old(
+    name: String,
+    pos: Pos,
+    facing: Dir,
+    inventory: Inventory,
+    home: Option<Pos>,
+) -> SavedPlayer {
+    SavedPlayer { name, pos, facing, inventory, home, last_seen: unix_now() }
+}
+
+/// Animaux d'une save antérieure : ils suivent leur maître (`staying = false`).
+fn animals_from_old(old: Vec<(Species, Pos, Option<String>)>) -> Vec<(Species, Pos, Option<String>, bool)> {
+    old.into_iter().map(|(species, pos, owner)| (species, pos, owner, false)).collect()
+}
+
+impl From<v3::SaveData> for SaveData {
+    /// Les joueurs de la v3 n'avaient pas de `last_seen` (heure du chargement), les animaux pas de `staying` (`false`).
+    fn from(old: v3::SaveData) -> Self {
+        SaveData {
+            version: SAVE_VERSION,
+            seed: old.seed,
+            next_id: old.next_id,
+            players: old
+                .players
+                .into_iter()
+                .map(|(n, p, d, inv, h)| player_from_old(n, p, d, inv, h))
+                .collect(),
+            chunks: old.chunks,
+            spawned: old.spawned,
+            animals: animals_from_old(old.animals),
+        }
+    }
+}
+
 impl From<v2::SaveData> for SaveData {
-    /// Les joueurs de la v2 n'avaient pas de home : `None`.
+    /// Les joueurs de la v2 n'avaient pas de home : `None` ; ni `last_seen` ni `staying` (voir la v3).
     fn from(old: v2::SaveData) -> Self {
         SaveData {
             version: SAVE_VERSION,
             seed: old.seed,
             next_id: old.next_id,
-            players: old.players.into_iter().map(|(n, p, d, inv)| (n, p, d, inv, None)).collect(),
+            players: old
+                .players
+                .into_iter()
+                .map(|(n, p, d, inv)| player_from_old(n, p, d, inv, None))
+                .collect(),
             chunks: old.chunks,
             spawned: old.spawned,
-            animals: old.animals,
+            animals: animals_from_old(old.animals),
         }
     }
 }
 
 impl From<v1::SaveData> for SaveData {
-    /// Les joueurs de la v1 n'avaient ni inventaire ni home : sacs vides, `None`.
+    /// Les joueurs de la v1 n'avaient ni inventaire ni home : sacs vides, `None` ; ni `last_seen` ni `staying` (voir la v3).
     fn from(old: v1::SaveData) -> Self {
         SaveData {
             version: SAVE_VERSION,
             seed: old.seed,
             next_id: old.next_id,
-            players: old.players.into_iter().map(|(n, p, d)| (n, p, d, Vec::new(), None)).collect(),
+            players: old
+                .players
+                .into_iter()
+                .map(|(n, p, d)| player_from_old(n, p, d, Vec::new(), None))
+                .collect(),
             chunks: old.chunks,
             spawned: old.spawned,
-            animals: old.animals,
+            animals: animals_from_old(old.animals),
         }
     }
+}
+
+/// Joueur sauvegardé. L'ordre des champs est le format postcard : ne pas le changer sans nouvelle version.
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+pub struct SavedPlayer {
+    pub name: String,
+    pub pos: Pos,
+    pub facing: Dir,
+    pub inventory: Inventory,
+    pub home: Option<Pos>,
+    /// Dernière présence, en secondes Unix (connecté : heure de la sauvegarde).
+    pub last_seen: u64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -91,18 +165,32 @@ pub struct SaveData {
     pub version: u32,
     pub seed: u64,
     pub next_id: EntityId,
-    /// `(nom, position, direction, inventaire, home)`.
-    pub players: Vec<(String, Pos, Dir, Inventory, Option<Pos>)>,
+    pub players: Vec<SavedPlayer>,
     pub chunks: Vec<(ChunkPos, Vec<Tile>)>,
     pub spawned: Vec<ChunkPos>,
-    pub animals: Vec<(Species, Pos, Option<String>)>,
+    /// `(espèce, position, maître, staying)`.
+    pub animals: Vec<(Species, Pos, Option<String>, bool)>,
 }
 
 impl Game {
     pub fn to_save(&self) -> SaveData {
-        let online =
-            self.players.values().map(|p| (p.name.clone(), p.pos, p.facing, p.inventory.clone(), p.home));
-        let offline = self.offline.iter().map(|(n, (p, d, inv, h))| (n.clone(), *p, *d, inv.clone(), *h));
+        let now = unix_now();
+        let online = self.players.values().map(|p| SavedPlayer {
+            name: p.name.clone(),
+            pos: p.pos,
+            facing: p.facing,
+            inventory: p.inventory.clone(),
+            home: p.home,
+            last_seen: now,
+        });
+        let offline = self.offline.iter().map(|(n, (pos, facing, inv, home, last_seen))| SavedPlayer {
+            name: n.clone(),
+            pos: *pos,
+            facing: *facing,
+            inventory: inv.clone(),
+            home: *home,
+            last_seen: *last_seen,
+        });
         SaveData {
             version: SAVE_VERSION,
             seed: self.world.seed,
@@ -110,17 +198,25 @@ impl Game {
             players: online.chain(offline).collect(),
             chunks: self.world.modified_chunks().map(|(p, t)| (p, t.clone())).collect(),
             spawned: self.world.spawned().collect(),
-            animals: self.animals().values().map(|a| (a.species, a.pos(), a.tamed_by.clone())).collect(),
+            animals: self
+                .animals()
+                .values()
+                .map(|a| (a.species, a.pos(), a.tamed_by.clone(), a.staying))
+                .collect(),
         }
     }
 
     pub fn from_save(s: SaveData, now: Instant) -> Game {
         let mut g = Game::new(World::restore(s.seed, s.chunks, s.spawned));
         g.next_id = s.next_id;
-        g.offline = s.players.into_iter().map(|(n, p, d, inv, h)| (n, (p, d, inv, h))).collect();
-        for (species, pos, tamed_by) in s.animals {
+        g.offline = s
+            .players
+            .into_iter()
+            .map(|p| (p.name, (p.pos, p.facing, p.inventory, p.home, p.last_seen)))
+            .collect();
+        for (species, pos, tamed_by, staying) in s.animals {
             // Deux animaux sur la même tuile (vieille save) : le second est ignoré.
-            if g.insert_animal(species, pos, tamed_by, now).is_none() {
+            if g.insert_animal(species, pos, tamed_by, staying, now).is_none() {
                 tracing::warn!(?pos, "save has two animals on one tile, one dropped");
             }
         }
@@ -144,6 +240,7 @@ fn decode(bytes: &[u8]) -> io::Result<SaveData> {
     let (version, _) = postcard::take_from_bytes::<u32>(bytes).map_err(io::Error::other)?;
     let data = match version {
         SAVE_VERSION => postcard::from_bytes::<SaveData>(bytes).map_err(io::Error::other)?,
+        3 => postcard::from_bytes::<v3::SaveData>(bytes).map_err(io::Error::other)?.into(),
         2 => postcard::from_bytes::<v2::SaveData>(bytes).map_err(io::Error::other)?.into(),
         1 => postcard::from_bytes::<v1::SaveData>(bytes).map_err(io::Error::other)?.into(),
         v => return Err(io::Error::other(format!("unsupported save version {v}"))),
@@ -210,7 +307,14 @@ mod tests {
             version: SAVE_VERSION,
             seed: 42,
             next_id: 7,
-            players: vec![("bob".into(), Pos::new(1, 2), Dir::North, vec![(Item::Wood, 3)], None)],
+            players: vec![SavedPlayer {
+                name: "bob".into(),
+                pos: Pos::new(1, 2),
+                facing: Dir::North,
+                inventory: vec![(Item::Wood, 3)],
+                home: None,
+                last_seen: 1_000,
+            }],
             chunks: vec![],
             spawned: vec![],
             animals: vec![],
@@ -223,9 +327,9 @@ mod tests {
         let mut data = sample();
         let (a, b) = (Pos::new(3, 4), Pos::new(5, 6));
         data.animals = vec![
-            (Species::Cow, a, None),
-            (Species::Dog, b, Some("bob".into())),
-            (Species::Rabbit, a, None), // doublon : ignoré
+            (Species::Cow, a, None, false),
+            (Species::Dog, b, Some("bob".into()), false),
+            (Species::Rabbit, a, None, false), // doublon : ignoré
         ];
         let g = Game::from_save(data, now);
         assert_eq!(g.animals().len(), 2);
@@ -247,21 +351,22 @@ mod tests {
     fn inventory_roundtrips_through_game() {
         let now = Instant::now();
         let mut data = sample();
-        data.players.push((
-            "carl".into(),
-            Pos::new(3, 3),
-            Dir::East,
-            vec![(Item::Stone, 9), (Item::Fiber, 1)],
-            Some(Pos::new(8, 9)),
-        ));
+        data.players.push(SavedPlayer {
+            name: "carl".into(),
+            pos: Pos::new(3, 3),
+            facing: Dir::East,
+            inventory: vec![(Item::Stone, 9), (Item::Fiber, 1)],
+            home: Some(Pos::new(8, 9)),
+            last_seen: 2_000,
+        });
         let g = Game::from_save(data, now);
         assert_eq!(g.offline["bob"].2, vec![(Item::Wood, 3)]);
         let back = g.to_save();
         let mut players = back.players;
-        players.sort_by(|a, b| a.0.cmp(&b.0));
-        assert_eq!(players[0].3, vec![(Item::Wood, 3)]);
-        assert_eq!(players[1].3, vec![(Item::Stone, 9), (Item::Fiber, 1)]);
-        assert_eq!((players[0].4, players[1].4), (None, Some(Pos::new(8, 9))));
+        players.sort_by(|a, b| a.name.cmp(&b.name));
+        assert_eq!(players[0].inventory, vec![(Item::Wood, 3)]);
+        assert_eq!(players[1].inventory, vec![(Item::Stone, 9), (Item::Fiber, 1)]);
+        assert_eq!((players[0].home, players[1].home), (None, Some(Pos::new(8, 9))));
     }
 
     #[test]
@@ -277,6 +382,73 @@ mod tests {
     }
 
     #[test]
+    fn staying_and_last_seen_roundtrip_through_game_and_file() {
+        let now = Instant::now();
+        let mut data = sample();
+        data.animals = vec![
+            (Species::Dog, Pos::new(5, 5), Some("bob".into()), true),
+            (Species::Rabbit, Pos::new(6, 6), Some("bob".into()), false),
+        ];
+        let mut g = Game::from_save(data, now);
+        let dir = temp_dir("staying");
+        write(&dir, &g.to_save()).unwrap();
+        let back = Game::from_save(read(&dir).unwrap().unwrap(), now);
+        std::fs::remove_dir_all(&dir).unwrap();
+        // `last_seen` d'un joueur hors ligne : valeur stockée, inchangée.
+        assert_eq!(back.offline["bob"].4, 1_000);
+        let staying = |species| back.animals().values().find(|a| a.species == species).unwrap().staying;
+        assert!(staying(Species::Dog) && !staying(Species::Rabbit));
+        // Joueur en ligne : `last_seen` = heure de la sauvegarde.
+        let (tx, _rx) = tokio::sync::mpsc::channel(crate::game::SEND_QUEUE);
+        g.event(crate::game::Event::Join { conn: 1, name: "bob".into(), tx }, now);
+        let before = unix_now();
+        let saved = g.to_save();
+        let bob = saved.players.iter().find(|p| p.name == "bob").unwrap();
+        assert!(bob.last_seen >= before);
+    }
+
+    #[test]
+    fn leaving_records_last_seen() {
+        let now = Instant::now();
+        let mut g = Game::from_save(sample(), now);
+        let (tx, _rx) = tokio::sync::mpsc::channel(crate::game::SEND_QUEUE);
+        g.event(crate::game::Event::Join { conn: 1, name: "bob".into(), tx }, now);
+        let before = unix_now();
+        g.event(crate::game::Event::Leave(1), now);
+        assert!(g.offline["bob"].4 >= before);
+    }
+
+    #[test]
+    fn v3_save_loads_with_fresh_last_seen_and_following_animals() {
+        let old = v3::SaveData {
+            version: 3,
+            seed: 42,
+            next_id: 7,
+            players: vec![(
+                "bob".into(),
+                Pos::new(1, 2),
+                Dir::North,
+                vec![(Item::Wood, 3)],
+                Some(Pos::new(4, 5)),
+            )],
+            chunks: vec![(ChunkPos::new(0, 0), vec![Tile::Grass; CHUNK_AREA])],
+            spawned: vec![ChunkPos::new(0, 0)],
+            animals: vec![(Species::Dog, Pos::new(5, 5), Some("bob".into()))],
+        };
+        let before = unix_now();
+        let data = decode(&postcard::to_stdvec(&old).unwrap()).unwrap();
+        assert_eq!((data.version, data.seed, data.next_id), (SAVE_VERSION, 42, 7));
+        let p = &data.players[0];
+        assert_eq!(
+            (&p.name, p.pos, p.facing, &p.inventory, p.home),
+            (&"bob".to_string(), Pos::new(1, 2), Dir::North, &vec![(Item::Wood, 3)], Some(Pos::new(4, 5)))
+        );
+        assert!(p.last_seen >= before);
+        assert_eq!(data.animals, vec![(Species::Dog, Pos::new(5, 5), Some("bob".to_string()), false)]);
+        assert_eq!((data.chunks.len(), data.spawned.len()), (1, 1));
+    }
+
+    #[test]
     fn v2_save_loads_with_no_homes() {
         let old = v2::SaveData {
             version: 2,
@@ -289,9 +461,10 @@ mod tests {
         };
         let data = decode(&postcard::to_stdvec(&old).unwrap()).unwrap();
         assert_eq!((data.version, data.seed, data.next_id), (SAVE_VERSION, 42, 7));
+        let p = &data.players[0];
         assert_eq!(
-            data.players,
-            vec![("bob".to_string(), Pos::new(1, 2), Dir::North, vec![(Item::Wood, 3)], None)]
+            (&p.name, p.pos, &p.inventory, p.home),
+            (&"bob".to_string(), Pos::new(1, 2), &vec![(Item::Wood, 3)], None)
         );
         assert_eq!((data.chunks.len(), data.spawned.len(), data.animals.len()), (1, 1, 1));
     }
@@ -309,16 +482,21 @@ mod tests {
         };
         let data = decode(&postcard::to_stdvec(&old).unwrap()).unwrap();
         assert_eq!((data.version, data.seed, data.next_id), (SAVE_VERSION, 42, 7));
-        assert_eq!(data.players, vec![("bob".to_string(), Pos::new(1, 2), Dir::North, vec![], None)]);
+        let p = &data.players[0];
+        assert_eq!(
+            (&p.name, p.pos, p.facing, p.inventory.len(), p.home),
+            (&"bob".to_string(), Pos::new(1, 2), Dir::North, 0, None)
+        );
+        assert_eq!(data.animals, vec![(Species::Cow, Pos::new(5, 5), None, false)]);
         assert_eq!((data.chunks.len(), data.spawned.len(), data.animals.len()), (1, 1, 1));
     }
 
     #[test]
-    fn version_4_is_rejected() {
-        let mut bytes = postcard::to_stdvec(&4u32).unwrap();
+    fn version_5_is_rejected() {
+        let mut bytes = postcard::to_stdvec(&5u32).unwrap();
         bytes.extend_from_slice(&[0, 0, 0]);
         let err = decode(&bytes).err().unwrap();
-        assert_eq!(err.to_string(), "unsupported save version 4");
+        assert_eq!(err.to_string(), "unsupported save version 5");
     }
 
     #[test]

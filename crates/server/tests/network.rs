@@ -126,7 +126,7 @@ async fn world_and_players_persist_across_restarts() {
     let _ = stop.send(());
     task.await.unwrap();
     let save = idk_server::save::read(&dir).unwrap().expect("world saved on shutdown");
-    let saved = save.players.iter().find(|(n, ..)| n == "carol").map(|(_, p, ..)| *p).unwrap();
+    let saved = save.players.iter().find(|p| p.name == "carol").map(|p| p.pos).unwrap();
     assert_ne!(saved, start_pos, "player should have moved");
 
     let (addr, stop, task) = start(Some(dir.clone())).await;

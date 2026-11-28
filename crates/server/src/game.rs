@@ -3,7 +3,7 @@
 
 use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use idk_shared::content::{Effect, Item, Species, Tile, player_color_index};
 use idk_shared::geo::{CHUNK_SIZE, ChunkPos, Dir, Pos};
@@ -30,6 +30,11 @@ pub const SEND_QUEUE: usize = 256;
 const MAX_SPAWN_SEARCH: i32 = 32;
 /// Rayon (tuiles) de recherche d'une place libre pour un animal prévu dont la tuile est prise.
 const SPAWN_SLIDE: i32 = 2;
+
+/// Secondes écoulées depuis l'epoch Unix (0 si l'horloge est avant l'epoch).
+pub fn unix_now() -> u64 {
+    SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map_or(0, |d| d.as_secs())
+}
 
 /// Taille maximale d'une pile d'objets. Au-delà, l'objet est perdu.
 pub const MAX_STACK: u16 = 999;
@@ -117,7 +122,7 @@ pub struct Animal {
     pub facing: Dir,
     /// Name of the player it follows.
     pub tamed_by: Option<String>,
-    /// Apprivoisé et prié de rester sur place (caresse du maître). Non sauvegardé : au redémarrage il suit de nouveau.
+    /// Apprivoisé et prié de rester sur place (caresse du maître). Sauvegardé.
     pub staying: bool,
     pub next_step: Instant,
 }
@@ -136,8 +141,8 @@ pub struct Game {
     animals: HashMap<EntityId, Animal>,
     /// Tuile -> animal qui l'occupe (au plus un par tuile). Rend [`Game::animal_at`] O(1).
     animal_index: HashMap<Pos, EntityId>,
-    /// Last known place, bag and home of players who are not connected, by name.
-    pub offline: HashMap<String, (Pos, Dir, Inventory, Option<Pos>)>,
+    /// Last known place, bag, home and departure time (Unix seconds) of players who are not connected, by name.
+    pub offline: HashMap<String, (Pos, Dir, Inventory, Option<Pos>, u64)>,
     pub next_id: EntityId,
     pub rng: Rng,
 }
@@ -214,10 +219,10 @@ impl Game {
                 (old.id, old.pos, old.facing, old.inventory, old.home)
             }
             None => {
-                let (pos, facing, inventory, home) = self
+                let (pos, facing, inventory, home, _last_seen) = self
                     .offline
                     .remove(&name)
-                    .unwrap_or_else(|| (self.world.spawn_point(), Dir::South, Inventory::new(), None));
+                    .unwrap_or_else(|| (self.world.spawn_point(), Dir::South, Inventory::new(), None, 0));
                 (self.alloc_id(), pos, facing, inventory, home)
             }
         };
@@ -275,7 +280,7 @@ impl Game {
         if let Some(p) = self.players.remove(&conn) {
             tracing::info!(name = %p.name, "player left");
             self.broadcast_log(LogKind::System, format!("{} left the world.", p.name));
-            self.offline.insert(p.name, (p.pos, p.facing, p.inventory, p.home));
+            self.offline.insert(p.name, (p.pos, p.facing, p.inventory, p.home, unix_now()));
             self.broadcast_online();
         }
     }
@@ -383,7 +388,7 @@ impl Game {
             }
             self.effect(target, Effect::Heart);
         } else if let Some(id) = self.animal_at(target) {
-            crate::ai::pet(self, conn, id);
+            crate::ai::pet(self, conn, id, unix_now());
         } else if let Some(t) = self.world.tile(target).def().toggles_to {
             self.set_tile(target, t);
             let text = if t.def().walkable { "You open the door." } else { "You close the door." };
@@ -474,16 +479,15 @@ impl Game {
         species: Species,
         pos: Pos,
         tamed_by: Option<String>,
+        staying: bool,
         now: Instant,
     ) -> Option<EntityId> {
         if self.animal_index.contains_key(&pos) {
             return None;
         }
         let id = self.alloc_id();
-        self.animals.insert(
-            id,
-            Animal { id, species, pos, facing: Dir::South, tamed_by, staying: false, next_step: now },
-        );
+        self.animals
+            .insert(id, Animal { id, species, pos, facing: Dir::South, tamed_by, staying, next_step: now });
         self.animal_index.insert(pos, id);
         Some(id)
     }
@@ -602,7 +606,7 @@ impl Game {
     /// pas libre (`ai::free` : animal, joueur ou tuile non praticable), on prend la tuile libre la
     /// plus proche (rayon `SPAWN_SLIDE`), sinon l'animal est perdu.
     fn place_spawned_animal(&mut self, species: Species, pos: Pos, now: Instant) {
-        if crate::ai::free(self, pos) && self.insert_animal(species, pos, None, now).is_some() {
+        if crate::ai::free(self, pos) && self.insert_animal(species, pos, None, false, now).is_some() {
             return;
         }
         for r in 1..=SPAWN_SLIDE {
@@ -611,7 +615,7 @@ impl Game {
                     let p = Pos::new(pos.x + dx, pos.y + dy);
                     if dx.abs().max(dy.abs()) == r
                         && crate::ai::free(self, p)
-                        && self.insert_animal(species, p, None, now).is_some()
+                        && self.insert_animal(species, p, None, false, now).is_some()
                     {
                         return;
                     }
@@ -760,7 +764,7 @@ pub(crate) mod tests {
         let o = grass_field(&mut g);
         let spot = Pos::new(o.x + 1, o.y);
         g.players.get_mut(&2).unwrap().pos = spot;
-        let dog = g.insert_animal(Species::Dog, spot, None, now).unwrap();
+        let dog = g.insert_animal(Species::Dog, spot, None, false, now).unwrap();
         drain(&mut bob_rx);
         g.event(Event::Msg(1, ClientMsg::Interact(Dir::East)), now);
         assert_eq!(g.animals()[&dog].tamed_by, None, "animal not tamed");
@@ -869,7 +873,7 @@ pub(crate) mod tests {
         g.players.get_mut(&1).unwrap().pos = Pos::new(40, 40);
         g.players.get_mut(&1).unwrap().facing = Dir::West;
         g.clear_animals();
-        let dog = g.insert_animal(Species::Dog, Pos::new(41, 40), Some("alice".into()), now).unwrap();
+        let dog = g.insert_animal(Species::Dog, Pos::new(41, 40), Some("alice".into()), false, now).unwrap();
         drain(&mut old_rx);
 
         let mut new_rx = join_rx(&mut g, 2, "alice", now);
@@ -927,8 +931,8 @@ pub(crate) mod tests {
         let now = Instant::now();
         let mut g = Game::new(World::new(5));
         let (a, b) = (Pos::new(0, 0), Pos::new(1, 0));
-        let id = g.insert_animal(Species::Cow, a, None, now).unwrap();
-        assert_eq!(g.insert_animal(Species::Dog, a, None, now), None);
+        let id = g.insert_animal(Species::Cow, a, None, false, now).unwrap();
+        assert_eq!(g.insert_animal(Species::Dog, a, None, false, now), None);
         assert_eq!(g.animals().len(), 1);
         g.move_animal(id, b);
         assert_eq!((g.animal_at(a), g.animal_at(b)), (None, Some(id)));
@@ -964,7 +968,7 @@ pub(crate) mod tests {
         let planned = World::new(5).load(cp);
         let (species, pos) = planned[0];
         // Un errant occupe la tuile de spawn avant le chargement du chunk.
-        let squatter = g.insert_animal(Species::Dog, pos, None, now).unwrap();
+        let squatter = g.insert_animal(Species::Dog, pos, None, false, now).unwrap();
         for (s, p) in g.world.load(cp) {
             g.place_spawned_animal(s, p, now);
         }
