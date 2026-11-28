@@ -1172,7 +1172,7 @@ pub(crate) mod tests {
         let mut rx = join_rx(&mut g, 1, "alice", now);
         g.clear_animals();
         let bush = break_bush(&mut g, &mut rx, now);
-        g.insert_animal(Species::Cow, bush, None, now).unwrap();
+        g.insert_animal(Species::Cow, bush, None, false, now).unwrap();
         g.tick(now + Duration::from_secs(300));
         assert_eq!(g.world.tile(bush), Tile::BushEmpty, "animal in the way");
         assert_eq!(g.regrow.len(), 1);
