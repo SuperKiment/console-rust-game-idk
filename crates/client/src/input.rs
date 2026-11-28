@@ -9,6 +9,10 @@ pub enum Action {
     Move(Dir),
     Interact,
     Build,
+    /// `[` : tuile à construire précédente.
+    PrevBuild,
+    /// `]` : tuile à construire suivante.
+    NextBuild,
     Break,
     Chat,
     ToggleIncognito,
@@ -53,7 +57,9 @@ pub const BINDINGS: &[Binding] = &[
         action: Action::Interact,
         help: Some(("e space", "interact, pet")),
     },
-    Binding { keys: &[Char('b')], action: Action::Build, help: Some(("b", "build wall")) },
+    Binding { keys: &[Char('b')], action: Action::Build, help: Some(("b", "build")) },
+    Binding { keys: &[Char('[')], action: Action::PrevBuild, help: Some(("[ ]", "choose block")) },
+    Binding { keys: &[Char(']')], action: Action::NextBuild, help: None },
     Binding { keys: &[Char('x')], action: Action::Break, help: Some(("x", "break")) },
     Binding { keys: &[Enter, Char('t')], action: Action::Chat, help: Some(("t enter", "chat")) },
     Binding { keys: &[F(1)], action: Action::Help, help: Some(("F1", "help")) },

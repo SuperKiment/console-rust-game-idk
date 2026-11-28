@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::time::Instant;
 
-use idk_shared::content::{PLAYER_COLORS, Rgb};
+use idk_shared::content::{PLAYER_COLORS, Rgb, Tile};
 use idk_shared::geo::Pos;
 use idk_shared::protocol::{LogKind, Look};
 use ratatui::Frame;
@@ -26,7 +26,7 @@ const MAP_MIN_WIDTH: u16 = 20;
 const LOG_HEIGHT: u16 = 9;
 const SEED_MIN_WIDTH: u16 = 40;
 const LOG_MIN_HEIGHT: u16 = 4;
-const ME_HEIGHT: u16 = 6;
+const ME_HEIGHT: u16 = 7;
 const LIST_MIN_HEIGHT: u16 = 3;
 const NEARBY_RADIUS: i32 = 12;
 
@@ -117,6 +117,7 @@ pub fn draw(f: &mut Frame, app: &App) {
                 kv("pos", format!("{}, {}", me.pos.x, me.pos.y)),
                 kv("biome", s.biome(me.pos).map(|b| b.def().name).unwrap_or("?").to_string()),
                 kv("facing", format!("{faced} ({})", s.facing().name())),
+                kv("build", build_label(app.build)),
             ]
         }
         None => me_offline_lines(s.is_offline(), s.map_center(), dim, text),
@@ -216,6 +217,13 @@ pub fn draw(f: &mut Frame, app: &App) {
         }),
     );
     draw_status(f, app, t, map_area);
+}
+
+/// Tuile à construire et son coût : `wall (1 stone)`.
+fn build_label(tile: Tile) -> String {
+    let def = tile.def();
+    let cost: Vec<String> = def.cost.iter().map(|(item, n)| format!("{n} {}", item.def().name)).collect();
+    format!("{} ({})", def.name, cost.join(", "))
 }
 
 /// Panneau « you » sans joueur : hors ligne (dernière position connue gardée) ou pas encore entré.
@@ -566,6 +574,13 @@ mod tests {
         let app = app_with_me();
         assert!(screen_at(&app, 120, 40).contains("quit"));
         assert!(!screen_at(&app, 60, 18).contains("keys"));
+    }
+
+    #[test]
+    fn you_panel_shows_build_choice() {
+        let app = app_with_me();
+        let s = screen_at(&app, 120, 40);
+        assert!(s.contains("build") && s.contains("wall (1 stone)"), "{s}");
     }
 
     #[test]

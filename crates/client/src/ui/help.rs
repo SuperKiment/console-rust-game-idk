@@ -133,7 +133,9 @@ fn action_label(action: Action) -> String {
     match action {
         Action::Move(dir) => format!("move {}", dir.name()),
         Action::Interact => "interact, pet".into(),
-        Action::Build => "build wall".into(),
+        Action::Build => "build".into(),
+        Action::PrevBuild => "previous block".into(),
+        Action::NextBuild => "next block".into(),
         Action::Break => "break".into(),
         Action::Chat => "chat".into(),
         Action::ToggleIncognito => "incognito".into(),
